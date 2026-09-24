@@ -1,0 +1,109 @@
+name: Build platform artifacts
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-jvm:
+    name: JVM app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Build JVM app
+        run: ./gradlew --no-daemon --console=plain hello_jvm_app:build
+
+      - name: Upload JVM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-app
+          path: |
+            hello_jvm_app/build/libs/*.jar
+          if-no-files-found: error
+
+  build-android:
+    name: Android app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Build Android app
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: ./gradlew --no-daemon --console=plain hello_android_app:assembleDebug
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app
+          path: |
+            hello_android_app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  build-browser:
+    name: Browser app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build browser app bundle
+        env:
+          CI: true
+        run: ./gradlew --no-daemon --console=plain hello_js_browser_app:browserProductionWebpack
+
+      - name: Upload browser artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-app
+          path: |
+            hello_js_browser_app/build/**
+          if-no-files-found: error
