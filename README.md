@@ -30,7 +30,6 @@ The oldest implementation that used various hacks was moved to [the old-multipla
 It's the Gradle multiple modules project. 
 
 * ``hello_android_app`` - Android application module, it's compiled to DEX bytecode, it produces an APK file upon build
-* ``hello_ios_app`` - Swift application for iOS, XCode project 
 * ``hello_js_browser_app`` - application transpiled for frontend JavaScript, packed in [WebPack](https://webpack.js.org/), it's only statically served by Node.js
 * ``hello_js_node_app`` - console application transpiled to Node.js JavaScript 
 * ``hello_jvm_app`` - console application compiled to Java bytecode for JVM, produces JAR that can be executed by eg. Oracle JVM
@@ -51,7 +50,6 @@ It's the Gradle multiple modules project.
 * prime number calculation is platform-independent, single code shared for all platforms 
 * text output on screen is platform dependent 
     * **Android** - it's done by adding with TextView to the layout
-    * **iOS** - stores lines in `ArrayList`, then it passes it through `Flow` and uses [SKIE](https://skie.touchlab.co/features/flows-in-swiftui) `Observing` on iOS Swift app end
     * **Frontend JavaScript** - it adds element in DOM of HTML page
     * **Native Console** - uses POSIX `printf`
     * **Node.js JavaScript** - uses `console.log()`
@@ -72,13 +70,6 @@ You can use Android Studio to run the application. To build from the command lin
 and an APK file is located in your ``build/outputs/apk`` directory.
 
 ![Hello Android](.images/hello_android.png)
-
-### iOS application
-
-It's in directory `hello_ios_app`. It's XCode project with SwiftUI application. `hello_shared` uses [SKIE](https://skie.touchlab.co/intro) library 
-to improve interoperability. 
-
-![Hello iOS](.images/hello_ios.png)
 
 ### JVM console application
 
@@ -133,5 +124,8 @@ You can find the.kexe binary in the build directory and execute it from there as
     
     $ ./gradlew tasks --all
     
+## Compile plan
+See [COMPILE_PLAN.md](COMPILE_PLAN.md) for the current installation and tooling checklist for Android, JVM, and browser builds.
+
 ## License
 Do whatever you want with this. 
