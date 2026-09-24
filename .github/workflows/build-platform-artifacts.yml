@@ -98,12 +98,12 @@ jobs:
       - name: Build browser app bundle
         env:
           CI: true
-        run: ./gradlew --no-daemon --console=plain hello_js_browser_app:browserProductionWebpack
+        run: ./gradlew --no-daemon --console=plain hello_js_browser_app:jsBrowserProductionWebpack
 
       - name: Upload browser artifact
         uses: actions/upload-artifact@v4
         with:
           name: browser-app
           path: |
-            hello_js_browser_app/build/**
+            hello_js_browser_app/build/distributions/**
           if-no-files-found: error
