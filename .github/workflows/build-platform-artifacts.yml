@@ -111,5 +111,5 @@ jobs:
         with:
           name: browser-app
           path: |
-            hello_js_browser_app/build/distributions/**
+            hello_js_browser_app/build/**
           if-no-files-found: error
