@@ -11,7 +11,6 @@ kotlin {
         mainRun {
             mainClass = "cz.sazel.hellokotlin.MainKt"
         }
-        withJava()
     }
 
     sourceSets {
@@ -31,3 +30,20 @@ kotlin {
         val jvmTest by getting
     }
 }
+
+tasks.register<Jar>("fatJar") {
+    dependsOn(tasks.named("jvmJar"))
+    archiveClassifier.set("fat")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes("Main-Class" to "cz.sazel.hellokotlin.MainKt")
+    }
+
+    from(kotlin.targets.getByName("jvm").compilations.getByName("main").output.allOutputs)
+    from({
+        configurations.getByName("jvmRuntimeClasspath").map { dependency ->
+            if (dependency.isDirectory) dependency else zipTree(dependency)
+        }
+    })
+}
+

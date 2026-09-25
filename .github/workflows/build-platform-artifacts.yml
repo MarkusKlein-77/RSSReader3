@@ -28,14 +28,14 @@ jobs:
           cache: gradle
 
       - name: Build JVM app
-        run: ./gradlew --no-daemon --console=plain hello_jvm_app:build
+        run: ./gradlew --no-daemon --console=plain hello_jvm_app:fatJar
 
       - name: Upload JVM artifact
         uses: actions/upload-artifact@v4
         with:
           name: jvm-app
           path: |
-            hello_jvm_app/build/libs/*.jar
+            hello_jvm_app/build/libs/*-fat.jar
           if-no-files-found: error
 
   build-android:
