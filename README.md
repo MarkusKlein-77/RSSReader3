@@ -1,4 +1,22 @@
-[![CircleCI](https://circleci.com/gh/wojta/hello-kotlin-multiplatform/tree/master.svg?style=svg)](https://circleci.com/gh/wojta/hello-kotlin-multiplatform/tree/master)
+# Kotlin Multiplatform Hello
+
+Minimal Kotlin Multiplatform project with shared business logic and shared Compose UI for Android and JVM desktop.
+
+## Modules
+
+- `shared` contains common state, tests, and the Compose UI in `commonMain`.
+- `androidApp` is the Android launcher.
+- `desktopApp` is the JVM desktop launcher.
+
+## Run
+
+```text
+./gradlew :shared:allTests
+./gradlew :androidApp:assembleDebug
+./gradlew :desktopApp:run
+```
+
+Open the project in Android Studio to run `androidApp` on an emulator or device. The same `App()` composable is used by both platforms.[![CircleCI](https://circleci.com/gh/wojta/hello-kotlin-multiplatform/tree/master.svg?style=svg)](https://circleci.com/gh/wojta/hello-kotlin-multiplatform/tree/master)
 
 **KOTLIN 2.2.10**
 
