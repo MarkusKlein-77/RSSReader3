@@ -20,6 +20,7 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
+            implementation(compose.materialIconsExtended)
             implementation(compose.ui)
         }
         commonTest.dependencies {
@@ -29,6 +30,12 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
             }
+        }
+        androidMain.dependencies {
+            implementation(libs.androidx.security.crypto)
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.kotlinx.browser)
         }
     }
 }

@@ -145,5 +145,8 @@ You can find the.kexe binary in the build directory and execute it from there as
 ## Compile plan
 See [COMPILE_PLAN.md](COMPILE_PLAN.md) for the current installation and tooling checklist for Android, JVM, and browser builds.
 
+## RSS reader concept
+See [RSS_READER_CONCEPT.md](RSS_READER_CONCEPT.md) for the phased plan to evolve this project into a Miniflux-backed app for Android, JVM desktop, and Wasm.
+
 ## License
 Do whatever you want with this. 
