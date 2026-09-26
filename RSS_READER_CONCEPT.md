@@ -89,6 +89,15 @@ Keep the existing independent Android, JVM, and Wasm artifact jobs and their art
 
 **Done when:** a pull request proves common tests and all three platform builds pass, and a push deploys the Wasm distribution only after the Wasm build succeeds.
 
+## Workflow Lessons Learned
+
+- **Compile Android launchers explicitly.** Applying the Android application and Compose compiler plugins alone does not compile a Kotlin `MainActivity`. Apply `org.jetbrains.kotlin.android` in `androidApp`, and align Java source/target compatibility with Kotlin's JVM 17 target. A successful APK task is not sufficient proof that the manifest's activity class is inside the APK; launch it on a device or emulator.
+- **Use a known JDK.** CI uses Temurin 17, so use the Gradle wrapper with JDK 17 locally as well. Check `JAVA_HOME` before building; a stale Android Studio JBR path can prevent Gradle from starting even when another JDK is installed.
+- **Verify the Android device round trip.** Confirm `adb devices -l` reports the phone as `device`, install with `adb install -r` to retain app data, then start with `adb shell am start -W`. Do not treat `Status: ok` by itself as proof of a healthy launch: verify the app PID and resumed activity, and inspect recent `AndroidRuntime`/`FATAL EXCEPTION` logs.
+- **Test the artifact that was just built.** After a failed or interrupted build, check the APK timestamp and build result before installing; a previous APK may still exist and can hide a packaging problem. Reinstall only after a successful build and use `-r` when preserving settings matters.
+- **Give Wasm a real viewport.** `ComposeViewport(document.body!!)` needs the host page's `html` and `body` to have full width and height. Check the actual canvas bounds at desktop and phone sizes, not only Wasm compilation. After publishing, load the deployment in a fresh tab or with a cache-busting URL when an already-open page may still have stale HTML or assets.
+- **Keep build and runtime gates distinct.** CI's Android APK build checks packaging, but not that the entry activity launches. Keep platform build gates and common tests, and add an emulator smoke test where CI infrastructure permits. For local device testing, record build success, install success, foreground activity, and crash-log status separately.
+
 ## First-Slice Acceptance Checklist
 
 - One shared Compose UI is used by Android, JVM desktop, and Wasm.
