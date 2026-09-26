@@ -89,3 +89,42 @@ jobs:
           name: wasm-web-app
           path: webApp/build/dist/wasmJs/productionExecutable/**
           if-no-files-found: error
+
+  deploy-pages:
+    name: Deploy Wasm to GitHub Pages
+    needs: build-wasm
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Wasm browser distribution
+        uses: actions/download-artifact@v5
+        with:
+          name: wasm-web-app
+          path: wasm-dist
+
+      - name: Checkout Pages repository
+        uses: actions/checkout@v7
+        with:
+          repository: MarkusKlein-77/MarkusKlein-77.github.io
+          token: ${{ secrets.PAGES_REPO_TOKEN }}
+          path: pages-site
+
+      - name: Update RSSReader subdirectory
+        run: |
+          rm -rf pages-site/RSSReader
+          mkdir -p pages-site/RSSReader
+          cp -R wasm-dist/. pages-site/RSSReader/
+
+      - name: Commit and push RSSReader deployment
+        working-directory: pages-site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add RSSReader
+          if git diff --cached --quiet; then
+            echo "RSSReader is already up to date."
+          else
+            git commit -m "Deploy RSSReader Wasm app"
+            git push
+          fi
