@@ -95,14 +95,14 @@ fun App(configurationStore: ConfigurationStore) {
                             showAllArticles = includeRead
                             configuration?.let { selected ->
                                 scope.launch {
-                                    loadArticles(selected, includeRead, refreshServer = false)
+                                    loadArticles(selected, includeRead, refreshServer = includeRead)
                                 }
                             }
                         },
                         enabled = configuration != null && !isRefreshing,
                         contentPadding = PaddingValues(horizontal = 4.dp),
                     ) {
-                        Text(if (showAllArticles) "All articles" else "Unread articles")
+                        Text(if (showAllArticles) "Unread articles" else "All articles")
                     }
                     IconButton(
                         onClick = {
