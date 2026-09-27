@@ -37,10 +37,21 @@ class MinifluxApi {
         configuration: MinifluxConfiguration,
         includeRead: Boolean,
     ): List<ArticleHeader> {
-        val statuses = if (includeRead) "status=unread&status=read" else "status=unread"
+        val statuses = if (includeRead) listOf("unread", "read") else listOf("unread")
+        return statuses
+            .flatMap { status -> loadArticlesForStatus(configuration, status) }
+            .distinctBy(ArticleHeader::id)
+            .sortedByDescending(ArticleHeader::publishedAt)
+            .take(100)
+    }
+
+    private suspend fun loadArticlesForStatus(
+        configuration: MinifluxConfiguration,
+        status: String,
+    ): List<ArticleHeader> {
         val response = request(
             configuration,
-            "v1/entries?$statuses&order=published_at&direction=desc&limit=100",
+            "v1/entries?status=$status&order=published_at&direction=desc&limit=100",
         )
         val entries = Json.parseToJsonElement(response).jsonObject["entries"]?.jsonArray
             ?: return emptyList()
@@ -53,7 +64,7 @@ class MinifluxApi {
                 title = title,
                 publishedAt = entry["published_at"]?.jsonPrimitive?.content.orEmpty(),
             )
-        }.sortedByDescending(ArticleHeader::publishedAt)
+        }
     }
 
     fun close() {
