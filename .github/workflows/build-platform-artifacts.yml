@@ -3,6 +3,7 @@ name: Build platform artifacts
 on:
   push:
     branches: [main, master]
+    tags: ["v*", "V*"]
   pull_request:
   workflow_dispatch:
 
@@ -33,16 +34,20 @@ jobs:
       - name: Build Android debug APK
         run: ./gradlew --no-daemon --console=plain :androidApp:assembleDebug
 
+      - name: Prepare release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        run: cp androidApp/build/outputs/apk/debug/app-debug.apk RSSReader-android.apk
+
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: android-app
-          path: androidApp/build/outputs/apk/debug/*.apk
+          path: ${{ startsWith(github.ref, 'refs/tags/') && 'RSSReader-android.apk' || 'androidApp/build/outputs/apk/debug/*.apk' }}
           if-no-files-found: error
 
   build-jvm:
-    name: Build JVM desktop app
-    runs-on: ubuntu-latest
+    name: Build Windows desktop app
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -55,15 +60,52 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Build JVM desktop distribution
-        run: ./gradlew --no-daemon --console=plain :desktopApp:createDistributable
+      - name: Build Windows desktop distribution
+        run: .\gradlew.bat --no-daemon --console=plain :desktopApp:createDistributable
 
-      - name: Upload JVM desktop distribution
+      - name: Package Windows desktop distribution
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: Compress-Archive -Path 'desktopApp/build/compose/binaries/main/app/*' -DestinationPath 'RSSReader-windows-x64.zip'
+
+      - name: Upload Windows desktop distribution
         uses: actions/upload-artifact@v4
         with:
-          name: jvm-desktop-app
-          path: desktopApp/build/compose/binaries/main/app/**
+          name: windows-desktop-app
+          path: ${{ startsWith(github.ref, 'refs/tags/') && 'RSSReader-windows-x64.zip' || 'desktopApp/build/compose/binaries/main/app/**' }}
           if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-android, build-jvm]
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Android APK
+        uses: actions/download-artifact@v5
+        with:
+          name: android-app
+          path: release-assets/android
+
+      - name: Download Windows desktop distribution
+        uses: actions/download-artifact@v5
+        with:
+          name: windows-desktop-app
+          path: release-assets/windows
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release-assets/android/RSSReader-android.apk
+          release-assets/windows/RSSReader-windows-x64.zip
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag
 
   build-wasm:
     name: Build WebAssembly app

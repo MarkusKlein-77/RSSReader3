@@ -2,6 +2,15 @@
 
 Minimal Kotlin Multiplatform project with shared business logic and shared Compose UI for Android and JVM desktop.
 
+## Downloads
+
+Download the latest published builds:
+
+- [Android APK](https://github.com/MarkusKlein-77/RSSReader3/releases/latest/download/RSSReader-android.apk) (debug-signed)
+- [Windows desktop app, x64](https://github.com/MarkusKlein-77/RSSReader3/releases/latest/download/RSSReader-windows-x64.zip)
+
+Releases are published when a version tag such as `v1.0.0` is pushed.
+
 ## Modules
 
 - `shared` contains common state, tests, and the Compose UI in `commonMain`.
