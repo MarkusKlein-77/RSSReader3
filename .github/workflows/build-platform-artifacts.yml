@@ -103,6 +103,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           release-assets/android/RSSReader-android.apk
           release-assets/windows/RSSReader-windows-x64.zip
+          --repo "$GITHUB_REPOSITORY"
           --title "$GITHUB_REF_NAME"
           --generate-notes
           --verify-tag
