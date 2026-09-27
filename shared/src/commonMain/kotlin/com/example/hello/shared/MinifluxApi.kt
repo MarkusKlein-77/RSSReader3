@@ -24,12 +24,23 @@ class MinifluxApi {
         request(configuration, "v1/me")
     }
 
-    suspend fun refreshArticles(configuration: MinifluxConfiguration): List<ArticleHeader> {
+    suspend fun refreshArticles(
+        configuration: MinifluxConfiguration,
+        includeRead: Boolean,
+    ): List<ArticleHeader> {
         request(configuration, "v1/feeds/refresh", put = true)
         delay(5_000)
+        return loadArticles(configuration, includeRead)
+    }
+
+    suspend fun loadArticles(
+        configuration: MinifluxConfiguration,
+        includeRead: Boolean,
+    ): List<ArticleHeader> {
+        val statuses = if (includeRead) "status=unread&status=read" else "status=unread"
         val response = request(
             configuration,
-            "v1/entries?status=unread&order=published_at&direction=desc&limit=100",
+            "v1/entries?$statuses&order=published_at&direction=desc&limit=100",
         )
         val entries = Json.parseToJsonElement(response).jsonObject["entries"]?.jsonArray
             ?: return emptyList()

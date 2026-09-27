@@ -2,6 +2,7 @@ package com.example.hello.shared
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,15 +49,24 @@ fun App(configurationStore: ConfigurationStore) {
     var accessToken by remember { mutableStateOf(initialConfiguration?.accessToken.orEmpty()) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var articles by remember { mutableStateOf<List<ArticleHeader>>(emptyList()) }
+    var showAllArticles by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
 
-    suspend fun refresh(configurationToRefresh: MinifluxConfiguration) {
+    suspend fun loadArticles(
+        configurationToLoad: MinifluxConfiguration,
+        includeRead: Boolean,
+        refreshServer: Boolean,
+    ) {
         isRefreshing = true
         refreshError = null
         try {
-            articles = api.refreshArticles(configurationToRefresh)
+            articles = if (refreshServer) {
+                api.refreshArticles(configurationToLoad, includeRead)
+            } else {
+                api.loadArticles(configurationToLoad, includeRead)
+            }
         } catch (exception: Exception) {
             refreshError = exception.message ?: "Could not refresh articles. Check your connection."
         } finally {
@@ -65,7 +75,7 @@ fun App(configurationStore: ConfigurationStore) {
     }
 
     LaunchedEffect(configuration) {
-        configuration?.let { refresh(it) }
+        configuration?.let { loadArticles(it, showAllArticles, refreshServer = true) }
     }
 
     MaterialTheme {
@@ -79,8 +89,29 @@ fun App(configurationStore: ConfigurationStore) {
             ) {
                 Text("RSS Reader", style = MaterialTheme.typography.titleLarge)
                 Row {
+                    TextButton(
+                        onClick = {
+                            val includeRead = !showAllArticles
+                            showAllArticles = includeRead
+                            configuration?.let { selected ->
+                                scope.launch {
+                                    loadArticles(selected, includeRead, refreshServer = false)
+                                }
+                            }
+                        },
+                        enabled = configuration != null && !isRefreshing,
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                    ) {
+                        Text(if (showAllArticles) "All articles" else "Unread articles")
+                    }
                     IconButton(
-                        onClick = { configuration?.let { selected -> scope.launch { refresh(selected) } } },
+                        onClick = {
+                            configuration?.let { selected ->
+                                scope.launch {
+                                    loadArticles(selected, showAllArticles, refreshServer = true)
+                                }
+                            }
+                        },
                         enabled = configuration != null && !isRefreshing,
                     ) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Refresh articles")
@@ -104,7 +135,9 @@ fun App(configurationStore: ConfigurationStore) {
                 when {
                     isRefreshing -> Text("Refreshing articles...")
                     refreshError != null -> Text(refreshError!!, color = MaterialTheme.colorScheme.error)
-                    articles.isEmpty() -> Text("No unread articles.")
+                    articles.isEmpty() -> Text(
+                        if (showAllArticles) "No articles." else "No unread articles.",
+                    )
                 }
                 LazyColumn {
                     items(articles, key = ArticleHeader::id) { article ->
