@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -18,17 +21,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 @Composable
 fun App(configurationStore: ConfigurationStore) {
+    val api = remember { MinifluxApi() }
+    DisposableEffect(api) { onDispose { api.close() } }
+    val scope = rememberCoroutineScope()
     val initialConfiguration = remember(configurationStore) { configurationStore.load() }
     var configuration by remember(configurationStore) { mutableStateOf(initialConfiguration) }
     var showConfiguration by remember(configurationStore) {
@@ -37,6 +47,26 @@ fun App(configurationStore: ConfigurationStore) {
     var serverUrl by remember { mutableStateOf(initialConfiguration?.serverUrl.orEmpty()) }
     var accessToken by remember { mutableStateOf(initialConfiguration?.accessToken.orEmpty()) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var articles by remember { mutableStateOf<List<ArticleHeader>>(emptyList()) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    var isConnecting by remember { mutableStateOf(false) }
+
+    suspend fun refresh(configurationToRefresh: MinifluxConfiguration) {
+        isRefreshing = true
+        refreshError = null
+        try {
+            articles = api.refreshArticles(configurationToRefresh)
+        } catch (exception: Exception) {
+            refreshError = exception.message ?: "Could not refresh articles. Check your connection."
+        } finally {
+            isRefreshing = false
+        }
+    }
+
+    LaunchedEffect(configuration) {
+        configuration?.let { refresh(it) }
+    }
 
     MaterialTheme {
         Column(
@@ -48,22 +78,43 @@ fun App(configurationStore: ConfigurationStore) {
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 Text("RSS Reader", style = MaterialTheme.typography.titleLarge)
-                IconButton(
-                    onClick = {
-                        serverUrl = configuration?.serverUrl.orEmpty()
-                        accessToken = configuration?.accessToken.orEmpty()
-                        validationError = null
-                        showConfiguration = true
-                    },
-                ) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Configure Miniflux")
+                Row {
+                    IconButton(
+                        onClick = { configuration?.let { selected -> scope.launch { refresh(selected) } } },
+                        enabled = configuration != null && !isRefreshing,
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh articles")
+                    }
+                    IconButton(
+                        onClick = {
+                            serverUrl = configuration?.serverUrl.orEmpty()
+                            accessToken = configuration?.accessToken.orEmpty()
+                            validationError = null
+                            showConfiguration = true
+                        },
+                    ) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "Configure Miniflux")
+                    }
                 }
             }
 
             if (configuration == null) {
                 Text("Configure a Miniflux server to get started.")
             } else {
-                Text("Configured server: ${configuration?.serverUrl}")
+                when {
+                    isRefreshing -> Text("Refreshing articles...")
+                    refreshError != null -> Text(refreshError!!, color = MaterialTheme.colorScheme.error)
+                    articles.isEmpty() -> Text("No unread articles.")
+                }
+                LazyColumn {
+                    items(articles, key = ArticleHeader::id) { article ->
+                        Text(
+                            text = article.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        )
+                    }
+                }
             }
         }
 
@@ -83,6 +134,7 @@ fun App(configurationStore: ConfigurationStore) {
                             label = { Text("Server URL") },
                             placeholder = { Text("https://miniflux.example.com") },
                             singleLine = true,
+                            enabled = !isConnecting,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         )
                         OutlinedTextField(
@@ -94,6 +146,7 @@ fun App(configurationStore: ConfigurationStore) {
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Access token") },
                             singleLine = true,
+                            enabled = !isConnecting,
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         )
@@ -107,6 +160,7 @@ fun App(configurationStore: ConfigurationStore) {
                 },
                 confirmButton = {
                     TextButton(
+                        enabled = !isConnecting,
                         onClick = {
                             val normalizedUrl = normalizeServerUrl(serverUrl)
                             when {
@@ -119,29 +173,39 @@ fun App(configurationStore: ConfigurationStore) {
                                         serverUrl = normalizedUrl,
                                         accessToken = accessToken.trim(),
                                     )
-                                    try {
-                                        configurationStore.save(updatedConfiguration)
-                                        configuration = updatedConfiguration
-                                        showConfiguration = false
+                                    scope.launch {
+                                        isConnecting = true
                                         validationError = null
-                                    } catch (_: Exception) {
-                                        validationError = "Could not save the configuration on this device."
+                                        try {
+                                            api.validate(updatedConfiguration)
+                                            configurationStore.save(updatedConfiguration)
+                                            configuration = updatedConfiguration
+                                            showConfiguration = false
+                                        } catch (exception: Exception) {
+                                            validationError = exception.message
+                                                ?: "Could not connect to Miniflux. Check the URL and access token."
+                                        } finally {
+                                            isConnecting = false
+                                        }
                                     }
                                 }
                             }
                         },
                     ) {
-                        Text("Save")
+                        Text(if (isConnecting) "Connecting..." else "Connect")
                     }
                 },
                 dismissButton = {
                     Row {
                         if (configuration != null) {
                             TextButton(
+                                enabled = !isConnecting,
                                 onClick = {
                                     try {
                                         configurationStore.clear()
                                         configuration = null
+                                        articles = emptyList()
+                                        refreshError = null
                                         serverUrl = ""
                                         accessToken = ""
                                         validationError = null
@@ -152,7 +216,10 @@ fun App(configurationStore: ConfigurationStore) {
                             ) {
                                 Text("Forget")
                             }
-                            TextButton(onClick = { showConfiguration = false }) {
+                            TextButton(
+                                enabled = !isConnecting,
+                                onClick = { showConfiguration = false },
+                            ) {
                                 Text("Cancel")
                             }
                         }

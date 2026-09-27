@@ -17,6 +17,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":sharedLogic"))
+            implementation(libs.ktor.client.core)
+            implementation(libs.kotlinx.serialization.json)
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
@@ -29,13 +31,16 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                implementation(libs.ktor.client.cio)
             }
         }
         androidMain.dependencies {
             implementation(libs.androidx.security.crypto)
+            implementation(libs.ktor.client.android)
         }
         wasmJsMain.dependencies {
             implementation(libs.kotlinx.browser)
+            implementation(libs.ktor.client.js)
         }
     }
 }
