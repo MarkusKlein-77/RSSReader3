@@ -7,6 +7,9 @@ import io.ktor.client.request.put
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -15,6 +18,10 @@ data class ArticleHeader(
     val id: Long,
     val title: String,
     val publishedAt: String,
+    val url: String,
+    val imageUrl: String?,
+    val sourceTitle: String,
+    val sourceIconUrl: String?,
 )
 
 class MinifluxApi {
@@ -48,12 +55,56 @@ class MinifluxApi {
             val entry = element.jsonObject
             val id = entry["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
             val title = entry["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val feed = entry["feed"] as? JsonObject
+            val siteUrl = feed?.get("site_url")?.jsonPrimitive?.contentOrNull
+                ?: feed?.get("feed_url")?.jsonPrimitive?.contentOrNull
+            val content = entry["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
             ArticleHeader(
                 id = id,
                 title = title,
                 publishedAt = entry["published_at"]?.jsonPrimitive?.content.orEmpty(),
+                url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                imageUrl = findImageUrl(entry, content),
+                sourceTitle = feed?.get("title")?.jsonPrimitive?.contentOrNull ?: "RSS",
+                sourceIconUrl = faviconUrl(siteUrl),
             )
         }
+    }
+
+    private fun findImageUrl(entry: JsonObject, content: String): String? {
+        val enclosures = entry["enclosures"] as? JsonArray
+        val enclosureImage = enclosures?.firstNotNullOfOrNull { element ->
+            val enclosure = element as? JsonObject ?: return@firstNotNullOfOrNull null
+            val mimeType = enclosure["mime_type"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (mimeType.startsWith("image/", ignoreCase = true)) {
+                enclosure["url"]?.jsonPrimitive?.contentOrNull
+            } else {
+                null
+            }
+        }
+        if (!enclosureImage.isNullOrBlank()) return enclosureImage
+        return imageSourcePattern.find(content)?.groupValues?.getOrNull(1)
+            ?.replace("&amp;", "&")
+            ?.takeIf(String::isNotBlank)
+    }
+
+    private fun faviconUrl(siteUrl: String?): String? {
+        val url = siteUrl?.trim()?.takeIf(String::isNotBlank) ?: return null
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd <= 0) return null
+        val authorityStart = schemeEnd + 3
+        val authorityEnd = url.indexOfAny(charArrayOf('/', '?', '#'), authorityStart)
+            .let { if (it < 0) url.length else it }
+        val authority = url.substring(authorityStart, authorityEnd)
+        if (authority.isBlank()) return null
+        return "${url.substring(0, schemeEnd)}://$authority/favicon.ico"
+    }
+
+    private companion object {
+        val imageSourcePattern = Regex(
+            """<img\b[^>]*\bsrc\s*=\s*[\"']([^\"']+)[\"']""",
+            RegexOption.IGNORE_CASE,
+        )
     }
 
     fun close() {

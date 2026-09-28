@@ -26,7 +26,7 @@ Prefer a shared HTTP abstraction and JSON serialization in common code, with an 
 
 ### 1. Preserve the runnable baseline
 
-Before changing UI, confirm the current local gates: `:shared:allTests`, `:sharedLogic:allTests`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Keep each platform launcher calling the same shared `App()`.
+Use CI/CD as the primary place to run the build gates: `:shared:allTests`, `:sharedLogic:allTests`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Run these locally only when the required toolchain is already available; keep each platform launcher calling the same shared `App()`.
 
 **Done when:** the baseline builds on a clean checkout and the three launchers still point to the shared UI.
 
@@ -92,7 +92,7 @@ Keep the existing independent Android, JVM, and Wasm artifact jobs and their art
 ## Workflow Lessons Learned
 
 - **Compile Android launchers explicitly.** Applying the Android application and Compose compiler plugins alone does not compile a Kotlin `MainActivity`. Apply `org.jetbrains.kotlin.android` in `androidApp`, and align Java source/target compatibility with Kotlin's JVM 17 target. A successful APK task is not sufficient proof that the manifest's activity class is inside the APK; launch it on a device or emulator.
-- **Use a known JDK.** CI uses Temurin 17, so use the Gradle wrapper with JDK 17 locally as well. Check `JAVA_HOME` before building; a stale Android Studio JBR path can prevent Gradle from starting even when another JDK is installed.
+- **Prefer CI builds in constrained environments.** CI uses Temurin 17 and is the primary build/verification path when local resources or tooling are limited. Android Studio is not installed in the current workstation environment because of insufficient resources. Run local Gradle builds only when a compatible JDK and Android SDK are already configured; after a toolchain-related failure, do not repeatedly retry the same local build. Check CI results instead.
 - **Verify the Android device round trip.** Confirm `adb devices -l` reports the phone as `device`, install with `adb install -r` to retain app data, then start with `adb shell am start -W`. Do not treat `Status: ok` by itself as proof of a healthy launch: verify the app PID and resumed activity, and inspect recent `AndroidRuntime`/`FATAL EXCEPTION` logs.
 - **Test the artifact that was just built.** After a failed or interrupted build, check the APK timestamp and build result before installing; a previous APK may still exist and can hide a packaging problem. Reinstall only after a successful build and use `-r` when preserving settings matters.
 - **Give Wasm a real viewport.** `ComposeViewport(document.body!!)` needs the host page's `html` and `body` to have full width and height. Check the actual canvas bounds at desktop and phone sizes, not only Wasm compilation. After publishing, load the deployment in a fresh tab or with a cache-busting URL when an already-open page may still have stale HTML or assets.

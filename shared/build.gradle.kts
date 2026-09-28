@@ -19,6 +19,7 @@ kotlin {
             implementation(project(":sharedLogic"))
             implementation(libs.ktor.client.core)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kamel.image.default)
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
