@@ -16,7 +16,6 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":sharedLogic"))
             implementation(libs.ktor.client.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kamel.image.default)

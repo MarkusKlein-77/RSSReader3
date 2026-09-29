@@ -2,12 +2,11 @@
 
 ## Goal
 
-Evolve this repository's Kotlin Multiplatform Hello World into an RSS reader that uses a Miniflux server as its article source. Android, JVM desktop, and browser WebAssembly builds should use the same Compose UI and shared application/domain code. The first delivery covers connection setup, persistent configuration, and displaying articles; later product requirements can extend this foundation.
+This project is a Kotlin Multiplatform RSS reader that uses a user-provided Miniflux server as its article source. Android, JVM desktop, and browser WebAssembly builds share the Compose UI and application logic. The current delivery covers connection setup, persistent configuration, and article display; later product requirements can extend this foundation.
 
 ## Repository Starting Point
 
-- `shared` is the Compose Multiplatform UI module. It already targets Android, desktop JVM, and `wasmJs` and exposes the `App()` composable used by all three launchers.
-- `sharedLogic` is a multiplatform library for common business logic and tests. It currently has Android, JVM, JS, and Wasm targets; it can own the Miniflux domain and use-case contracts.
+- `shared` contains the Miniflux client, shared application state, platform abstractions, and Compose UI. It targets Android, desktop JVM, and `wasmJs` and exposes the `App()` composable used by all three launchers.
 - `androidApp`, `desktopApp`, and `webApp` are platform launchers. Keep platform-specific setup in these modules or their source sets, not in the common UI.
 - `.github/workflows/build-platform-artifacts.yml` builds an Android APK, a JVM desktop distribution, and a Wasm browser distribution. On non-PR events it publishes the Wasm files to the `RSSReader` directory in the Pages repository.
 
@@ -15,24 +14,23 @@ Evolve this repository's Kotlin Multiplatform Hello World into an RSS reader tha
 
 | Area | Responsibility |
 | --- | --- |
-| `sharedLogic/commonMain` | Article/configuration models, Miniflux repository and API adapter, configuration validation rules, and load-articles use case/state. No Compose or platform APIs. |
-| `sharedLogic` platform source sets | Select the HTTP client engine and implement platform settings/secret storage, exposed through a small platform factory. Keep browser APIs out of Android/JVM code and vice versa. |
-| `shared/commonMain` | Shared Compose screens, navigation between setup/list views, UI state rendering, and user actions. Connect to shared logic through an injected app-level dependency. |
+| `shared/commonMain` | Article/configuration models, Miniflux API adapter, shared application state, Compose screens, and user actions. |
+| `shared` platform source sets | Select the HTTP client engine and implement platform settings/secret storage and article opening. Keep browser APIs out of Android/JVM code and vice versa. |
 | `androidApp`, `desktopApp`, `webApp` | Construct or obtain platform dependencies and start the shared `App()`. Preserve the existing thin-launcher pattern. |
 
-Prefer a shared HTTP abstraction and JSON serialization in common code, with an HTTP engine selected per target. Ktor Client is a suitable candidate because it has Android/JVM and browser Wasm support; confirm the exact engine and library versions against the repository's Kotlin and Compose versions before adding dependencies. Keep dependency versions in `gradle/libs.versions.toml`.
+The app uses Ktor Client and JSON serialization in common code, with an HTTP engine selected per target. Keep dependency versions in `gradle/libs.versions.toml`.
 
 ## Step-by-Step Delivery
 
 ### 1. Preserve the runnable baseline
 
-Use CI/CD as the primary place to run the build gates: `:shared:allTests`, `:sharedLogic:allTests`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Run these locally only when the required toolchain is already available; keep each platform launcher calling the same shared `App()`.
+Use CI/CD as the primary place to run the build gates: `:shared:allTests`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Run these locally only when the required toolchain is already available; keep each platform launcher calling the same shared `App()`.
 
 **Done when:** the baseline builds on a clean checkout and the three launchers still point to the shared UI.
 
 ### 2. Define the first-slice domain and states
 
-In `sharedLogic/commonMain`, add only the concepts needed for connection and article display:
+Keep the common code focused on the concepts needed for connection and article display:
 
 - `MinifluxConfiguration`: normalized server URL and access token.
 - `Article`: stable ID, title, feed name, publication time, and available summary/content fields.
@@ -53,7 +51,7 @@ Test the adapter using a mocked HTTP engine, including successful authentication
 
 ### 4. Add platform settings and secret handling
 
-Put a common settings interface in the shared logic boundary and implement it per target. Save the normalized URL and token only after connection validation succeeds. Load saved settings at startup and allow them to be replaced or cleared from the configuration screen.
+Keep the settings interface common and implement it per target. Save the normalized URL and token only after connection validation succeeds. Load saved settings at startup and allow them to be replaced or cleared from the configuration screen.
 
 - **Android:** use app-private storage for the URL and a platform-protected secret store for the token (Android Keystore-backed encryption); do not store the token in plain preferences.
 - **JVM desktop:** use the operating system credential store for the token where available, with the server URL in normal application preferences. Document the behavior if no supported secret store exists rather than silently claiming encrypted storage.
@@ -63,7 +61,7 @@ Put a common settings interface in the shared logic boundary and implement it pe
 
 ### 5. Build the shared configuration and article UI
 
-Replace the Hello World content in `shared/commonMain` with a shared app state and Compose screens:
+Maintain the shared app state and Compose screens in `shared/commonMain`:
 
 - On first start, show a compact setup form for the Miniflux server URL and access token.
 - When already configured, show articles and provide a configuration icon in the top app bar.
@@ -71,7 +69,7 @@ Replace the Hello World content in `shared/commonMain` with a shared app state a
 - Display article title, feed, date, and available summary/content. Include loading, empty, and retry states.
 - Keep layout and interaction usable at phone, desktop, and browser sizes. Keep keyboard and screen-reader access in view when implementing fields and icon buttons.
 
-Keep UI state transitions in shared logic and rendering in Compose. Do not add platform-specific duplicate screens.
+Keep UI state transitions and rendering in shared code. Do not add platform-specific duplicate screens.
 
 **Done when:** the same setup and article-list flow runs from all three launchers.
 
@@ -85,7 +83,7 @@ Test the deployed subpath, asset URLs, configuration persistence, and a real bro
 
 ### 7. Extend CI/CD as a merge gate
 
-Keep the existing independent Android, JVM, and Wasm artifact jobs and their artifact outputs. Add a test job (or test steps before packaging) for `:sharedLogic:allTests` and `:shared:allTests`; keep the platform build jobs as checks for target-specific compilation. Ensure pull requests build all three platforms without deployment, and retain the existing rule that Pages deployment runs only for non-PR events. The Pages deployment needs its existing repository token only in the deployment job.
+Keep the existing independent Android, JVM, and Wasm artifact jobs and their artifact outputs. Add a test job (or test steps before packaging) for `:shared:allTests`; keep the platform build jobs as checks for target-specific compilation. Ensure pull requests build all three platforms without deployment, and retain the existing rule that Pages deployment runs only for non-PR events. The Pages deployment needs its existing repository token only in the deployment job.
 
 **Done when:** a pull request proves common tests and all three platform builds pass, and a push deploys the Wasm distribution only after the Wasm build succeeds.
 

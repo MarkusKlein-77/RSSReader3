@@ -71,7 +71,6 @@ crashlytics-build.properties
 hs_err_pid*
 
 web/js/*
-/hello_js/web/js/
 
 .gitignore
 .kotlin

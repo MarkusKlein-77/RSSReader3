@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.hello.android"
+        applicationId = "de.onkelholle.RSSReader"
         minSdk = 24
         targetSdk = 36
         versionCode = 3

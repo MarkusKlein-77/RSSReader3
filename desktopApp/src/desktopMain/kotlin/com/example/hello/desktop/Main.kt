@@ -8,7 +8,7 @@ import com.example.hello.shared.DesktopConfigurationStore
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
-        title = "KMP Hello",
+        title = "RSS Reader",
     ) {
         App(DesktopConfigurationStore())
     }

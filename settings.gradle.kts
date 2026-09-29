@@ -14,12 +14,10 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "kotlin-multiplatform-hello"
+rootProject.name = "RSSReader"
 
 include(":shared")
-include(":sharedLogic")
 include(":androidApp")
 include(":desktopApp")
 include(":webApp")
-include(":nodeApp")
 
