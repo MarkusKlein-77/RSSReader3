@@ -13,12 +13,38 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    val hasReleaseSigning = listOf(
+        System.getenv("ANDROID_KEYSTORE_FILE"),
+        System.getenv("ANDROID_KEYSTORE_PASSWORD"),
+        System.getenv("ANDROID_KEY_ALIAS"),
+        System.getenv("ANDROID_KEY_PASSWORD"),
+    ).all { !it.isNullOrBlank() }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(System.getenv("ANDROID_KEYSTORE_FILE"))
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "de.onkelholle.RSSReader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.0.3"
+        versionCode = 4
+        versionName = "0.1.1"
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 }
 

@@ -31,12 +31,31 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
+      - name: Configure Android release signing
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-release-key.jks
+          echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android-release-key.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Build Android debug APK
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: ./gradlew --no-daemon --console=plain :androidApp:assembleDebug
+
+      - name: Build Android release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./gradlew --no-daemon --console=plain :androidApp:assembleRelease
 
       - name: Prepare release APK
         if: startsWith(github.ref, 'refs/tags/')
-        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk RSSReader-android.apk
+        run: cp androidApp/build/outputs/apk/release/androidApp-release.apk RSSReader-android.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
