@@ -158,4 +158,4 @@ See [COMPILE_PLAN.md](COMPILE_PLAN.md) for the current installation and tooling 
 See [RSS_READER_CONCEPT.md](RSS_READER_CONCEPT.md) for the phased plan to evolve this project into a Miniflux-backed app for Android, JVM desktop, and Wasm.
 
 ## License
-Do whatever you want with this. 
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
