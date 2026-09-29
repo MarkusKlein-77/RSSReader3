@@ -56,6 +56,18 @@ import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.launch
 
+private sealed interface ArticleListEntry {
+    val id: Long
+
+    data class ArticleItem(val article: ArticleHeader) : ArticleListEntry {
+        override val id: Long = article.id
+    }
+
+    data class Placeholder(val placeholderId: Long) : ArticleListEntry {
+        override val id: Long = placeholderId
+    }
+}
+
 @Composable
 fun App(configurationStore: ConfigurationStore) {
     val api = remember { MinifluxApi() }
@@ -70,7 +82,10 @@ fun App(configurationStore: ConfigurationStore) {
     var serverUrl by remember { mutableStateOf(initialConfiguration?.serverUrl.orEmpty()) }
     var accessToken by remember { mutableStateOf(initialConfiguration?.accessToken.orEmpty()) }
     var validationError by remember { mutableStateOf<String?>(null) }
-    var articles by remember { mutableStateOf<List<ArticleHeader>>(emptyList()) }
+    var articleEntries by remember { mutableStateOf<List<ArticleListEntry>>(emptyList()) }
+    val articles: List<ArticleHeader> = articleEntries
+        .filterIsInstance<ArticleListEntry.ArticleItem>()
+        .map { it.article }
     var showAllArticles by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
     var readError by remember { mutableStateOf<String?>(null) }
@@ -90,11 +105,12 @@ fun App(configurationStore: ConfigurationStore) {
         readError = null
         pendingReadIds = emptySet()
         try {
-            articles = if (refreshServer) {
+            val loadedArticles = if (refreshServer) {
                 api.refreshArticles(configurationToLoad, includeRead)
             } else {
                 api.loadArticles(configurationToLoad, includeRead)
             }
+            articleEntries = loadedArticles.map { ArticleListEntry.ArticleItem(it) }
         } catch (exception: Exception) {
             refreshError = exception.message ?: "Could not refresh articles. Check your connection."
         } finally {
@@ -110,7 +126,9 @@ fun App(configurationStore: ConfigurationStore) {
         readError = null
         try {
             api.markArticleRead(selectedConfiguration, articleId)
-            articles = articles.filterNot { it.id == articleId }
+            articleEntries = articleEntries.map { entry ->
+                if (entry.id == articleId) ArticleListEntry.Placeholder(articleId) else entry
+            }
         } catch (exception: Exception) {
             pendingReadIds = pendingReadIds - articleId
             readError = exception.message ?: "Could not mark article as read."
@@ -127,7 +145,7 @@ fun App(configurationStore: ConfigurationStore) {
         readError = null
         try {
             api.markAllArticlesRead(selectedConfiguration, idsToMark)
-            articles = emptyList()
+            articleEntries = emptyList()
         } catch (exception: Exception) {
             readError = exception.message ?: "Could not mark all articles as read."
         } finally {
@@ -141,7 +159,7 @@ fun App(configurationStore: ConfigurationStore) {
     }
 
     LaunchedEffect(
-        articles,
+        articleEntries,
         showAllArticles,
         configuration,
         lazyGridState.firstVisibleItemIndex,
@@ -152,9 +170,13 @@ fun App(configurationStore: ConfigurationStore) {
         val readCutoffIndex = lazyGridState.firstVisibleItemIndex - 3
         if (readCutoffIndex <= 0) return@LaunchedEffect
 
-        val idsToMark = articles
-            .mapIndexedNotNull { index, article ->
-                if (index < readCutoffIndex && article.id !in pendingReadIds) article.id else null
+        val idsToMark = articleEntries
+            .mapIndexedNotNull { index, entry ->
+                if (index < readCutoffIndex && entry.id !in pendingReadIds && entry is ArticleListEntry.ArticleItem) {
+                    entry.id
+                } else {
+                    null
+                }
             }
             .toSet()
 
@@ -243,9 +265,17 @@ fun App(configurationStore: ConfigurationStore) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(articles, key = ArticleHeader::id) { article ->
-                        ArticleTile(article) {
-                            article.url.takeIf(String::isNotBlank)?.let(openArticle)
+                    items(articleEntries, key = { entry -> entry.id }) { entry ->
+                        when (entry) {
+                            is ArticleListEntry.ArticleItem -> {
+                                ArticleTile(entry.article) {
+                                    entry.article.url.takeIf(String::isNotBlank)?.let(openArticle)
+                                }
+                            }
+
+                            is ArticleListEntry.Placeholder -> {
+                                Spacer(modifier = Modifier.height(0.dp))
+                            }
                         }
                     }
                 }
@@ -338,7 +368,7 @@ fun App(configurationStore: ConfigurationStore) {
                                     try {
                                         configurationStore.clear()
                                         configuration = null
-                                        articles = emptyList()
+                                        articleEntries = emptyList()
                                         refreshError = null
                                         serverUrl = ""
                                         accessToken = ""
