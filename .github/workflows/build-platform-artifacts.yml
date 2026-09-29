@@ -39,11 +39,15 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-release-key.jks
-          echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android-release-key.jks" >> "$GITHUB_ENV"
-          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-release-key.jks
+            echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android-release-key.jks" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Android release signing secrets are not configured; building an unsigned release APK."
+          fi
 
       - name: Build Android debug APK
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -55,7 +59,13 @@ jobs:
 
       - name: Prepare release APK
         if: startsWith(github.ref, 'refs/tags/')
-        run: cp androidApp/build/outputs/apk/release/androidApp-release.apk RSSReader-android.apk
+        run: |
+          APK_PATH="$(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "No release APK was produced in androidApp/build/outputs/apk/release/."
+            exit 1
+          fi
+          cp "$APK_PATH" RSSReader-android.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
