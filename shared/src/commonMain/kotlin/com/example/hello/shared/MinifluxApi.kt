@@ -4,7 +4,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.put
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,11 +27,22 @@ data class ArticleHeader(
     val sourceIconUrl: String?,
 )
 
-class MinifluxApi {
-    private val client = HttpClient()
-
+class MinifluxApi(
+    private val client: HttpClient = HttpClient(),
+) {
     suspend fun validate(configuration: MinifluxConfiguration) {
         request(configuration, "v1/me")
+    }
+
+    suspend fun markArticleRead(configuration: MinifluxConfiguration, articleId: Long) {
+        val payload = """{"entry_ids":[$articleId],"status":"read"}"""
+        requestWithBody(configuration, "v1/entries", payload)
+    }
+
+    suspend fun markAllArticlesRead(configuration: MinifluxConfiguration, articleIds: List<Long>) {
+        if (articleIds.isEmpty()) return
+        val payload = """{"entry_ids":[${articleIds.joinToString()}],"status":"read"}"""
+        requestWithBody(configuration, "v1/entries", payload)
     }
 
     suspend fun refreshArticles(
@@ -121,6 +135,28 @@ class MinifluxApi {
             client.put(url) { header("X-Auth-Token", configuration.accessToken) }
         } else {
             client.get(url) { header("X-Auth-Token", configuration.accessToken) }
+        }
+        if (response.status.value !in 200..299) {
+            throw MinifluxRequestException(
+                when (response.status.value) {
+                    401, 403 -> "Miniflux rejected the access token. Check your configuration."
+                    else -> "Miniflux returned HTTP ${response.status.value}. Try again later."
+                },
+            )
+        }
+        return response.bodyAsText()
+    }
+
+    private suspend fun requestWithBody(
+        configuration: MinifluxConfiguration,
+        path: String,
+        payload: String,
+    ): String {
+        val url = "${configuration.serverUrl.trimEnd('/')}/$path"
+        val response = client.put(url) {
+            header("X-Auth-Token", configuration.accessToken)
+            contentType(ContentType.Application.Json)
+            setBody(payload)
         }
         if (response.status.value !in 200..299) {
             throw MinifluxRequestException(

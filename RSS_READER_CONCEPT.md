@@ -87,10 +87,91 @@ Keep the existing independent Android, JVM, and Wasm artifact jobs and their art
 
 **Done when:** a pull request proves common tests and all three platform builds pass, and a push deploys the Wasm distribution only after the Wasm build succeeds.
 
+## Article Read Management Concept (planned follow-up)
+
+### Overview
+
+This follow-up feature adds automatic read-state tracking to the unread article list already rendered by the shared `App()` screen. The entry point remains the same: the unread view is a `LazyVerticalGrid` fed by `articles` and backed by `MinifluxApi.loadArticles(...)` in the shared common code. The new behavior extends the current flow without changing the app's existing server configuration or article browsing model.
+
+### Functional requirement
+
+When the user scrolls downward in the unread list, each article that moves above the visible viewport is considered “read enough” once it has crossed a top-of-screen threshold. The threshold is intentionally forgiving: there must be a grace area of two article lines still visible at the top before a read-marking request is sent. This means that an item is not marked read while it is still within roughly two lines of the viewport boundary; it becomes eligible only after it has traveled further upward than that buffer.
+
+In practical terms:
+
+- The unread list uses a scroll state tied to the `LazyVerticalGrid`.
+- For each visible item, the app computes whether its top edge has moved above the viewport top by more than the configured grace margin, expressed as roughly two displayed article rows.
+- Once the margin is exceeded, the article is moved to a pending-read set and the Miniflux “mark as read” API call is triggered.
+- After a successful server response, the article is removed from the local unread list and will no longer appear in the unread view.
+- If the user scrolls back upward before the server call completes, the item remains in the grace buffer and is not marked read prematurely.
+- When an item has been scrolled out of the visible area by more than the grace margin, it is treated as read and removed from the unread list even if it was only briefly visible earlier.
+
+### Intended UX behavior
+
+- Unread articles are displayed as the current list from `MinifluxApi.loadArticles(..., includeRead = false)`.
+- The app should maintain a local “pending read” tracker so an item is not re-sent repeatedly while the user keeps scrolling through the same area.
+- The article icon/button and list row should remain unchanged for this first implementation; the behavior is purely automatic and list-driven.
+- If the Miniflux request fails, the article should remain in the local unread list and be retried later, rather than silently disappearing.
+- If the user toggles back to the “All articles” view, the same read-tracking logic should not push read state changes for articles that are intentionally being displayed in read mode.
+
+### Top-bar “mark all as read” action
+
+A dedicated action is added to the top bar next to the refresh button. The user can trigger it from the unread list only when the app is configured and not actively refreshing.
+
+Behavior:
+
+- The action calls a new Miniflux API routine that marks every currently loaded unread article as read on the server.
+- Once the server confirms success, the entire unread list is cleared locally and the view returns to the empty-state text for the unread list.
+- The action should be safe to repeat: if the server rejects the request or the list is empty, it should display a clear error or no-op message without corrupting the UI state.
+- This action is independent from the scroll-driven auto-read logic and should not require the user to click each article individually.
+
+### Data flow and state model
+
+The feature is implemented in the shared layer so it works across Android, desktop, and browser builds.
+
+Potential additions to the app state:
+
+- `pendingReadIds: Set<Long>` to avoid duplicate requests while a read mutation is in flight.
+- `markingAllRead: Boolean` to disable the top-bar button while bulk processing is active.
+- `lastScrollEvent` or a derived `readThreshold` calculation from the grid scroll state.
+- `readErrorMessage` for failed individual or bulk read operations.
+
+The API layer should add two shared methods in `MinifluxApi`:
+
+- `markArticleRead(configuration, articleId)` for the single-article scroll-driven read action.
+- `markAllArticlesRead(configuration, articleIds)` for the top-bar bulk action.
+
+The request helper should remain centralized so all Miniflux calls continue to use the configured `X-Auth-Token` header and the same error handling pattern already used by `validate()` and `loadArticles()`.
+
+### Suggested implementation approach
+
+1. Add a `LazyGridState` to the unread list in `App.kt`.
+2. Track the first visible row and the pixel distance from the top edge of the grid to the item’s top edge.
+3. Compare that distance with a threshold corresponding to roughly two article rows, using the article tile height as the reference.
+4. When an item is beyond the threshold and not already in `pendingReadIds`, enqueue it for a read mutation.
+5. On success, remove the item from the local `articles` list immediately; on failure, leave the item in-place and show a non-blocking error message.
+6. Add the top-bar mark-all action in the same row that already contains the refresh and settings actions.
+
+### Acceptance criteria for this feature
+
+- Scrolling an unread article upward beyond the grace threshold marks it read on the Miniflux server.
+- The article disappears from the unread list immediately after a successful mutation.
+- The two-line grace buffer prevents accidental marking of articles that are still near the top of the viewport.
+- The top-bar icon marks all loaded unread articles as read and clears them locally.
+- Failed requests do not silently remove articles from the unread list.
+- The feature respects the current shared Compose architecture and does not duplicate platform code.
+
+### Risk and edge cases
+
+- Very short or very tall article cards can distort the row-height estimate; the app should avoid brittle pixel math and instead use a conservative threshold with a measurable buffer based on the actual grid item height.
+- If the list is refreshed while items are pending read, those IDs must be reconciled so no duplicate requests remain stuck in-flight.
+- On slow connections, the same article could be seen in the unread list for multiple scroll passes; the `pendingReadIds` guard prevents repeated calls.
+- A user who reopens the app before the pending request is acknowledged should see a consistent server state and a clean local list after refresh.
+
 ## Workflow Lessons Learned
 
 - **Compile Android launchers explicitly.** Applying the Android application and Compose compiler plugins alone does not compile a Kotlin `MainActivity`. Apply `org.jetbrains.kotlin.android` in `androidApp`, and align Java source/target compatibility with Kotlin's JVM 17 target. A successful APK task is not sufficient proof that the manifest's activity class is inside the APK; launch it on a device or emulator.
-- **Prefer CI builds in constrained environments.** CI uses Temurin 17 and is the primary build/verification path when local resources or tooling are limited. Android Studio is not installed in the current workstation environment because of insufficient resources. Run local Gradle builds only when a compatible JDK and Android SDK are already configured; after a toolchain-related failure, do not repeatedly retry the same local build. Check CI results instead.
+- **Prefer CI builds in constrained environments.** CI uses Temuren 17 and is the primary build/verification path when local resources or tooling are limited. Android Studio is not installed in the current workstation environment because of insufficient resources. Run local Gradle builds only when a compatible JDK and Android SDK are already configured; after a toolchain-related failure, do not repeatedly retry the same local build. Check CI results instead.
 - **Verify the Android device round trip.** Confirm `adb devices -l` reports the phone as `device`, install with `adb install -r` to retain app data, then start with `adb shell am start -W`. Do not treat `Status: ok` by itself as proof of a healthy launch: verify the app PID and resumed activity, and inspect recent `AndroidRuntime`/`FATAL EXCEPTION` logs.
 - **Test the artifact that was just built.** After a failed or interrupted build, check the APK timestamp and build result before installing; a previous APK may still exist and can hide a packaging problem. Reinstall only after a successful build and use `-r` when preserving settings matters.
 - **Give Wasm a real viewport.** `ComposeViewport(document.body!!)` needs the host page's `html` and `body` to have full width and height. Check the actual canvas bounds at desktop and phone sizes, not only Wasm compilation. After publishing, load the deployment in a fresh tab or with a cache-busting URL when an already-open page may still have stale HTML or assets.

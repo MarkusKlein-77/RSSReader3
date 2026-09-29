@@ -16,13 +16,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -70,8 +73,12 @@ fun App(configurationStore: ConfigurationStore) {
     var articles by remember { mutableStateOf<List<ArticleHeader>>(emptyList()) }
     var showAllArticles by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
+    var readError by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
+    var markAllReadInProgress by remember { mutableStateOf(false) }
+    var pendingReadIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val lazyGridState: LazyGridState = rememberLazyGridState()
 
     suspend fun loadArticles(
         configurationToLoad: MinifluxConfiguration,
@@ -80,6 +87,8 @@ fun App(configurationStore: ConfigurationStore) {
     ) {
         isRefreshing = true
         refreshError = null
+        readError = null
+        pendingReadIds = emptySet()
         try {
             articles = if (refreshServer) {
                 api.refreshArticles(configurationToLoad, includeRead)
@@ -93,8 +102,65 @@ fun App(configurationStore: ConfigurationStore) {
         }
     }
 
+    suspend fun markArticleAsRead(articleId: Long) {
+        val selectedConfiguration = configuration ?: return
+        if (articleId in pendingReadIds || showAllArticles) return
+
+        pendingReadIds = pendingReadIds + articleId
+        readError = null
+        try {
+            api.markArticleRead(selectedConfiguration, articleId)
+            articles = articles.filterNot { it.id == articleId }
+        } catch (exception: Exception) {
+            pendingReadIds = pendingReadIds - articleId
+            readError = exception.message ?: "Could not mark article as read."
+        }
+    }
+
+    suspend fun markAllArticlesAsRead() {
+        val selectedConfiguration = configuration ?: return
+        if (markAllReadInProgress || showAllArticles || articles.isEmpty()) return
+
+        val idsToMark = articles.map { it.id }
+        markAllReadInProgress = true
+        pendingReadIds = pendingReadIds + idsToMark.toSet()
+        readError = null
+        try {
+            api.markAllArticlesRead(selectedConfiguration, idsToMark)
+            articles = emptyList()
+        } catch (exception: Exception) {
+            readError = exception.message ?: "Could not mark all articles as read."
+        } finally {
+            pendingReadIds = pendingReadIds - idsToMark.toSet()
+            markAllReadInProgress = false
+        }
+    }
+
     LaunchedEffect(configuration) {
         configuration?.let { loadArticles(it, showAllArticles, refreshServer = true) }
+    }
+
+    LaunchedEffect(
+        articles,
+        showAllArticles,
+        configuration,
+        lazyGridState.firstVisibleItemIndex,
+        lazyGridState.firstVisibleItemScrollOffset,
+    ) {
+        if (showAllArticles || configuration == null || articles.isEmpty()) return@LaunchedEffect
+
+        val readCutoffIndex = lazyGridState.firstVisibleItemIndex - 3
+        if (readCutoffIndex <= 0) return@LaunchedEffect
+
+        val idsToMark = articles
+            .mapIndexedNotNull { index, article ->
+                if (index < readCutoffIndex && article.id !in pendingReadIds) article.id else null
+            }
+            .toSet()
+
+        for (articleId in idsToMark) {
+            markArticleAsRead(articleId)
+        }
     }
 
     MaterialTheme {
@@ -122,6 +188,16 @@ fun App(configurationStore: ConfigurationStore) {
                         contentPadding = PaddingValues(horizontal = 4.dp),
                     ) {
                         Text(if (showAllArticles) "Unread articles" else "All articles")
+                    }
+                    if (!showAllArticles) {
+                        IconButton(
+                            onClick = {
+                                scope.launch { markAllArticlesAsRead() }
+                            },
+                            enabled = configuration != null && !isRefreshing && !markAllReadInProgress && articles.isNotEmpty(),
+                        ) {
+                            Icon(Icons.Outlined.DoneAll, contentDescription = "Mark all unread articles as read")
+                        }
                     }
                     IconButton(
                         onClick = {
@@ -154,11 +230,13 @@ fun App(configurationStore: ConfigurationStore) {
                 when {
                     isRefreshing -> Text("Refreshing articles...")
                     refreshError != null -> Text(refreshError!!, color = MaterialTheme.colorScheme.error)
+                    readError != null -> Text(readError!!, color = MaterialTheme.colorScheme.error)
                     articles.isEmpty() -> Text(
                         if (showAllArticles) "No articles." else "No unread articles.",
                     )
                 }
                 LazyVerticalGrid(
+                    state = lazyGridState,
                     columns = GridCells.Adaptive(minSize = 180.dp),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(vertical = 10.dp),
