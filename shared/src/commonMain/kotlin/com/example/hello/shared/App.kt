@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -56,17 +57,10 @@ import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.launch
 
-private sealed interface ArticleListEntry {
-    val id: Long
-
-    data class ArticleItem(val article: ArticleHeader) : ArticleListEntry {
-        override val id: Long = article.id
-    }
-
-    data class Placeholder(val placeholderId: Long) : ArticleListEntry {
-        override val id: Long = placeholderId
-    }
-}
+private data class ArticleListEntry(
+    val article: ArticleHeader,
+    val markedForDeletion: Boolean = false,
+)
 
 @Composable
 fun App(configurationStore: ConfigurationStore) {
@@ -83,9 +77,7 @@ fun App(configurationStore: ConfigurationStore) {
     var accessToken by remember { mutableStateOf(initialConfiguration?.accessToken.orEmpty()) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var articleEntries by remember { mutableStateOf<List<ArticleListEntry>>(emptyList()) }
-    val articles: List<ArticleHeader> = articleEntries
-        .filterIsInstance<ArticleListEntry.ArticleItem>()
-        .map { it.article }
+    val unreadArticles: List<ArticleHeader> = articleEntries.map { it.article }
     var showAllArticles by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
     var readError by remember { mutableStateOf<String?>(null) }
@@ -94,6 +86,7 @@ fun App(configurationStore: ConfigurationStore) {
     var markAllReadInProgress by remember { mutableStateOf(false) }
     var pendingReadIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val lazyGridState: LazyGridState = rememberLazyGridState()
+    val previousVisibleIndex = remember { mutableStateOf<Int?>(null) }
 
     suspend fun loadArticles(
         configurationToLoad: MinifluxConfiguration,
@@ -104,13 +97,14 @@ fun App(configurationStore: ConfigurationStore) {
         refreshError = null
         readError = null
         pendingReadIds = emptySet()
+        previousVisibleIndex.value = null
         try {
             val loadedArticles = if (refreshServer) {
                 api.refreshArticles(configurationToLoad, includeRead)
             } else {
                 api.loadArticles(configurationToLoad, includeRead)
             }
-            articleEntries = loadedArticles.map { ArticleListEntry.ArticleItem(it) }
+            articleEntries = loadedArticles.map { ArticleListEntry(it) }
         } catch (exception: Exception) {
             refreshError = exception.message ?: "Could not refresh articles. Check your connection."
         } finally {
@@ -127,7 +121,7 @@ fun App(configurationStore: ConfigurationStore) {
         try {
             api.markArticleRead(selectedConfiguration, articleId)
             articleEntries = articleEntries.map { entry ->
-                if (entry.id == articleId) ArticleListEntry.Placeholder(articleId) else entry
+                if (entry.article.id == articleId) entry.copy(markedForDeletion = true) else entry
             }
         } catch (exception: Exception) {
             pendingReadIds = pendingReadIds - articleId
@@ -137,9 +131,9 @@ fun App(configurationStore: ConfigurationStore) {
 
     suspend fun markAllArticlesAsRead() {
         val selectedConfiguration = configuration ?: return
-        if (markAllReadInProgress || showAllArticles || articles.isEmpty()) return
+        if (markAllReadInProgress || showAllArticles || unreadArticles.isEmpty()) return
 
-        val idsToMark = articles.map { it.id }
+        val idsToMark = unreadArticles.map { it.id }
         markAllReadInProgress = true
         pendingReadIds = pendingReadIds + idsToMark.toSet()
         readError = null
@@ -165,15 +159,34 @@ fun App(configurationStore: ConfigurationStore) {
         lazyGridState.firstVisibleItemIndex,
         lazyGridState.firstVisibleItemScrollOffset,
     ) {
-        if (showAllArticles || configuration == null || articles.isEmpty()) return@LaunchedEffect
+        if (showAllArticles || configuration == null || unreadArticles.isEmpty()) return@LaunchedEffect
 
-        val readCutoffIndex = lazyGridState.firstVisibleItemIndex - 3
+        val currentVisibleIndex = lazyGridState.firstVisibleItemIndex
+        val previousIndex = previousVisibleIndex.value
+        if (previousIndex != null && currentVisibleIndex < previousIndex) {
+            val idsToRemove = articleEntries
+                .mapIndexedNotNull { index, entry ->
+                    if (entry.markedForDeletion && index <= currentVisibleIndex + 1 && entry.article.id !in pendingReadIds) {
+                        entry.article.id
+                    } else {
+                        null
+                    }
+                }
+                .toSet()
+
+            if (idsToRemove.isNotEmpty()) {
+                articleEntries = articleEntries.filterNot { it.article.id in idsToRemove }
+            }
+        }
+        previousVisibleIndex.value = currentVisibleIndex
+
+        val readCutoffIndex = currentVisibleIndex - 3
         if (readCutoffIndex <= 0) return@LaunchedEffect
 
         val idsToMark = articleEntries
             .mapIndexedNotNull { index, entry ->
-                if (index < readCutoffIndex && entry.id !in pendingReadIds && entry is ArticleListEntry.ArticleItem) {
-                    entry.id
+                if (index < readCutoffIndex && entry.article.id !in pendingReadIds && !entry.markedForDeletion) {
+                    entry.article.id
                 } else {
                     null
                 }
@@ -216,7 +229,7 @@ fun App(configurationStore: ConfigurationStore) {
                             onClick = {
                                 scope.launch { markAllArticlesAsRead() }
                             },
-                            enabled = configuration != null && !isRefreshing && !markAllReadInProgress && articles.isNotEmpty(),
+                            enabled = configuration != null && !isRefreshing && !markAllReadInProgress && unreadArticles.isNotEmpty(),
                         ) {
                             Icon(Icons.Outlined.DoneAll, contentDescription = "Mark all unread articles as read")
                         }
@@ -253,7 +266,7 @@ fun App(configurationStore: ConfigurationStore) {
                     isRefreshing -> Text("Refreshing articles...")
                     refreshError != null -> Text(refreshError!!, color = MaterialTheme.colorScheme.error)
                     readError != null -> Text(readError!!, color = MaterialTheme.colorScheme.error)
-                    articles.isEmpty() -> Text(
+                    unreadArticles.isEmpty() -> Text(
                         if (showAllArticles) "No articles." else "No unread articles.",
                     )
                 }
@@ -265,18 +278,12 @@ fun App(configurationStore: ConfigurationStore) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(articleEntries, key = { entry -> entry.id }) { entry ->
-                        when (entry) {
-                            is ArticleListEntry.ArticleItem -> {
-                                ArticleTile(entry.article) {
-                                    entry.article.url.takeIf(String::isNotBlank)?.let(openArticle)
-                                }
-                            }
-
-                            is ArticleListEntry.Placeholder -> {
-                                Spacer(modifier = Modifier.height(0.dp))
-                            }
-                        }
+                    items(articleEntries, key = { entry -> entry.article.id }) { entry ->
+                        ArticleTile(
+                            article = entry.article,
+                            onClick = { entry.article.url.takeIf(String::isNotBlank)?.let(openArticle) },
+                            markedForDeletion = entry.markedForDeletion,
+                        )
                     }
                 }
             }
@@ -395,9 +402,17 @@ fun App(configurationStore: ConfigurationStore) {
 }
 
 @Composable
-private fun ArticleTile(article: ArticleHeader, onClick: () -> Unit) {
+private fun ArticleTile(
+    article: ArticleHeader,
+    onClick: () -> Unit,
+    markedForDeletion: Boolean = false,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth().height(260.dp).clickable(onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(260.dp)
+            .alpha(if (markedForDeletion) 0.55f else 1f)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
