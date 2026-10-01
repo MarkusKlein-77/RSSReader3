@@ -177,6 +177,32 @@ The request helper should remain centralized so all Miniflux calls continue to u
 - **Give Wasm a real viewport.** `ComposeViewport(document.body!!)` needs the host page's `html` and `body` to have full width and height. Check the actual canvas bounds at desktop and phone sizes, not only Wasm compilation. After publishing, load the deployment in a fresh tab or with a cache-busting URL when an already-open page may still have stale HTML or assets.
 - **Keep build and runtime gates distinct.** CI's Android APK build checks packaging, but not that the entry activity launches. Keep platform build gates and common tests, and add an emulator smoke test where CI infrastructure permits. For local device testing, record build success, install success, foreground activity, and crash-log status separately.
 
+## CI Warning Prevention Concept (reviewed 2026-10-01)
+
+### Observed GitHub Actions annotations
+
+The latest successful workflow run, [Build platform artifacts #40](https://github.com/MarkusKlein-77/RSSReader3/actions/runs/36587492530), reported four warnings and three notices:
+
+- Three artifact uploads (`android-app`, `wasm-web-app`, and `windows-desktop-app`) use `actions/upload-artifact@v4`; one artifact download uses `actions/download-artifact@v5`. GitHub reports that these action versions target the deprecated Node.js 20 runtime and are currently being forced onto Node.js 24.
+- The Android build, Wasm build, and Pages deployment use `ubuntu-latest`. GitHub reports that this label will migrate to Ubuntu 26 during October-November 2026.
+- The preceding tagged run, [Build platform artifacts #39](https://github.com/MarkusKlein-77/RSSReader3/actions/runs/36586398381), also failed in the Android release job. Its annotation only says `Process completed with exit code 1`; the warning summary does not identify the cause. Diagnose that failure from the job log independently of the persistent runner/action notices.
+
+These are GitHub Actions runtime and runner-image annotations, not Kotlin or Gradle compiler warnings. The Actions annotation summary alone does not establish whether the build logs contain compiler warnings.
+
+### Proposed changes
+
+1. **Keep artifact actions on Node 24.** The urgent action-reference update is applied in the workflow: upload steps use `actions/upload-artifact@v7` and downloads use `actions/download-artifact@v8`. Both versions declare `runs.using: node24`; the latest releases at review time are [upload-artifact v7.0.1](https://github.com/actions/upload-artifact/releases/latest) and [download-artifact v8.0.1](https://github.com/actions/download-artifact/releases/latest). Preserve the artifact names and paths, then verify a complete run, including the tagged release artifact hand-off.
+2. **Make the production runner baseline explicit.** Change the three Linux jobs from `ubuntu-latest` to `ubuntu-24.04` so their image does not change implicitly and the migration notice is removed. Keep the Windows job unchanged; it did not produce this notice.
+3. **Test the next runner deliberately.** Add a scheduled or manual, non-publishing compatibility job on `ubuntu-26.04` for the Android and Wasm build tasks. Promote the main Linux jobs only after that check passes and the SDK/toolchain differences are understood. The Pages deployment should continue to consume the already-built Wasm artifact rather than repeat compilation.
+4. **Keep action versions current with Renovate.** Configure the Renovate GitHub App for this repository and enable its GitHub Actions manager for workflow action and runner updates. Require the existing build checks on Renovate pull requests. If the project adopts full-SHA action pinning, enable Renovate's digest pinning so the tag and resolved commit stay updated together.
+
+### Completion criteria
+
+- A new successful run has no Node.js 20 deprecation warnings, including artifact upload and download steps.
+- The production jobs no longer emit the `ubuntu-latest` migration notice.
+- Android, desktop, and Wasm artifacts are still produced and handed off correctly; pull requests still do not deploy Pages.
+- The Ubuntu 26 compatibility job passes before the production runner baseline is moved.
+
 ## First-Slice Acceptance Checklist
 
 - One shared Compose UI is used by Android, JVM desktop, and Wasm.
