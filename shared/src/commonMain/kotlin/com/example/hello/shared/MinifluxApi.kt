@@ -8,7 +8,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -45,13 +44,8 @@ class MinifluxApi(
         requestWithBody(configuration, "v1/entries", payload)
     }
 
-    suspend fun refreshArticles(
-        configuration: MinifluxConfiguration,
-        includeRead: Boolean,
-    ): List<ArticleHeader> {
+    suspend fun refreshFeeds(configuration: MinifluxConfiguration) {
         request(configuration, "v1/feeds/refresh", put = true)
-        delay(5_000)
-        return loadArticles(configuration, includeRead)
     }
 
     suspend fun loadArticles(

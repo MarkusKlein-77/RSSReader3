@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class ArticleListEntry(
@@ -99,12 +100,18 @@ fun App(configurationStore: ConfigurationStore) {
         pendingReadIds = emptySet()
         previousVisibleIndex.value = null
         try {
-            val loadedArticles = if (refreshServer) {
-                api.refreshArticles(configurationToLoad, includeRead)
+            if (refreshServer) {
+                api.refreshFeeds(configurationToLoad)
+                delay(5_000)
+                articleEntries = api.loadArticles(configurationToLoad, includeRead)
+                    .map { ArticleListEntry(it) }
+                delay(20_000)
+                articleEntries = api.loadArticles(configurationToLoad, includeRead)
+                    .map { ArticleListEntry(it) }
             } else {
-                api.loadArticles(configurationToLoad, includeRead)
+                articleEntries = api.loadArticles(configurationToLoad, includeRead)
+                    .map { ArticleListEntry(it) }
             }
-            articleEntries = loadedArticles.map { ArticleListEntry(it) }
         } catch (exception: Exception) {
             refreshError = exception.message ?: "Could not refresh articles. Check your connection."
         } finally {

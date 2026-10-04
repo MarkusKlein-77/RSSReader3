@@ -15,6 +15,24 @@ import kotlin.test.assertTrue
 
 class MinifluxApiTest {
     @Test
+    fun refreshesConfiguredFeedsOnServer() = runBlocking {
+        val engine = MockEngine { request ->
+            assertEquals("https://miniflux.example.com/v1/feeds/refresh", request.url.toString())
+            assertEquals("PUT", request.method.value)
+            assertEquals("token-123", request.headers["X-Auth-Token"])
+            respond("", status = HttpStatusCode.NoContent)
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        api.refreshFeeds(
+            configuration = MinifluxConfiguration(
+                serverUrl = "https://miniflux.example.com",
+                accessToken = "token-123",
+            ),
+        )
+    }
+
+    @Test
     fun marksSingleEntryAsRead() = runBlocking {
         val engine = MockEngine { request ->
             assertEquals("https://miniflux.example.com/v1/entries/42", request.url.toString())
