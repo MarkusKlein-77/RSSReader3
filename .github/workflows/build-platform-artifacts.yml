@@ -39,14 +39,23 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-release-key.jks
-            echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android-release-key.jks" >> "$GITHUB_ENV"
-            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+            KEYSTORE_PATH="$RUNNER_TEMP/android-release-key.p12"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            if [ ! -s "$KEYSTORE_PATH" ]; then
+              echo "::error::Decoded Android keystore is empty."
+              exit 1
+            fi
+            {
+              echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH"
+              echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+              echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+              echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
           else
-            echo "::warning::Android release signing secrets are not configured; building an unsigned release APK."
+            echo "::error::Android release signing secrets are required for tagged releases."
+            exit 1
           fi
 
       - name: Build Android debug APK
@@ -59,10 +68,31 @@ jobs:
 
       - name: Prepare release APK
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
-          APK_PATH="$(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          if [ -z "$APK_PATH" ]; then
-            echo "No release APK was produced in androidApp/build/outputs/apk/release/."
+          set -euo pipefail
+          if [ -z "$ANDROID_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Set the ANDROID_SIGNING_CERT_SHA256 Actions variable to the release certificate fingerprint."
+            exit 1
+          fi
+          mapfile -t APK_FILES < <(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print)
+          if [ "${#APK_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one release APK, found ${#APK_FILES[@]}."
+            exit 1
+          fi
+          APK_PATH="${APK_FILES[0]}"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          if [ ! -x "$APKSIGNER" ]; then
+            echo "::error::Android SDK apksigner was not found at $APKSIGNER."
+            exit 1
+          fi
+          SIGNING_INFO="$("$APKSIGNER" verify --verbose --print-certs "$APK_PATH")"
+          printf '%s\n' "$SIGNING_INFO"
+          ACTUAL_SHA256="$(printf '%s\n' "$SIGNING_INFO" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_SHA256="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$ACTUAL_SHA256" ] || [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "::error::Release APK signer fingerprint does not match ANDROID_SIGNING_CERT_SHA256."
             exit 1
           fi
           cp "$APK_PATH" RSSReader-android.apk

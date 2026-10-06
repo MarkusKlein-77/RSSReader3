@@ -87,6 +87,42 @@ Keep the existing independent Android, JVM, and Wasm artifact jobs and their art
 
 **Done when:** a pull request proves common tests and all three platform builds pass, and a push deploys the Wasm distribution only after the Wasm build succeeds.
 
+## Android Signing and Distribution Concept (reviewed 2026-10-06)
+
+### Current issue
+
+Android requires every installable APK to be signed, and an installed app can only be updated by an APK signed with the same app-signing certificate (or a supported signing-key rotation lineage). The `androidApp` Gradle build previously configured release signing only when all four `ANDROID_*` values were present. The tagged-release workflow also warned and continued when any value was missing, so it could publish an APK that was not signed with the key used for previous releases. The Gradle release task and tagged workflow now fail if signing inputs are missing. Release APKs are verified against the configured certificate fingerprint before publication.
+
+The application ID is currently `de.onkelholle.RSSReader`. Treat it and the release signing identity as persistent app identity. Do not change either during routine refactoring or key-secret updates.
+
+### Recommended signing model
+
+Keep direct APK distribution through GitHub Releases for now; it does not require Google Play or a Play Console account. Use one dedicated, long-lived release keystore for this app:
+
+1. Generate the release key once and keep an encrypted offline backup in a separate secure location. Record the key alias, the app ID, and the signing certificate SHA-256 fingerprint in the project’s private release records. The repository ignores `.jks`, `.keystore`, and `.p12` files; never commit the keystore or its passwords.
+2. Add `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as GitHub Actions repository secrets. Store the certificate fingerprint in the `ANDROID_SIGNING_CERT_SHA256` Actions variable. Restrict who can create release tags, since tagged workflows can access signing secrets.
+3. The tagged workflow decodes the keystore into the ephemeral runner temp directory. Gradle fails release packaging if any of the four signing values is missing. Do not publish an unsigned or debug-signed release APK as a fallback. Non-release builds continue to use the normal Android debug key and do not need release secrets.
+4. Before publication, the workflow verifies the APK using Android SDK `apksigner` and checks that its signer certificate SHA-256 matches `ANDROID_SIGNING_CERT_SHA256`. Preserve an increasing `versionCode` for every release.
+5. Test updates using the actual release artifact: install a prior signed release, then install the new APK with `adb install -r`. Confirm that data remains and the package updates without an uninstall. A debug APK is not a valid substitute for this update test.
+
+To obtain the fingerprint locally without uploading the keystore, run `keytool -list -v -keystore <path-to-p12> -storetype PKCS12 -alias <key-alias>` and use the certificate's SHA-256 value (colons are accepted) as the `ANDROID_SIGNING_CERT_SHA256` Actions variable. Never put the fingerprint in a secret-bearing command line; it is public certificate data.
+
+For direct APK distribution, loss of the release key can permanently prevent updates to existing installations. Do not rotate or replace it casually. If rotation ever becomes necessary, use Android’s supported signing-key rotation and proof-of-rotation tooling, verify device/API compatibility, and test upgrades from prior releases before shipping. Play App Signing is a separate distribution option: it requires a Play Console account and is not needed for the current GitHub APK workflow.
+
+### Android developer verification and the account question
+
+An Android account is **not required to generate a cryptographically signed APK or to publish one on GitHub today**. That is separate from Android’s new developer-verification rules. According to the [Android developer-verification guide](https://developer.android.com/developer-verification/guides), verification enforcement began on September 30, 2026 in Brazil, Indonesia, Singapore, and Thailand, with global expansion on certified Android devices planned for 2027. The guide says developers distributing outside Google Play should sign up for an Android Developer Console account, verify their identity, and register package names using an APK signed with the app’s private key.
+
+The guide also describes account-avoiding alternatives, with tradeoffs:
+
+- **Limited distribution:** no identity verification, but distribution is limited to up to 20 invited devices. This fits personal testing, not a public GitHub release.
+- **Unverified sideloading:** no developer account, but users may have to use Android’s advanced sideloading flow and accept additional safeguards. This is a higher-friction fallback, not a dependable consumer update experience.
+- **Verified external distribution:** intended for wider distribution outside Play. It involves Android Developer Console registration and identity verification, but does not require publishing in the Play Store or creating a Play Console listing.
+
+Therefore, keep the signing design independent of any Google account and continue using GitHub Releases while account-free sideloading meets the audience’s needs. Before the 2027 expansion, decide whether to accept the extra unverified-install flow or register through Android Developer Console for the normal install/update experience. Reuse the same app ID and signing key for registration; do not create a second “verified” build identity. Recheck the official rollout and account requirements before implementing registration, since the policy and console procedures may change.
+
+**Done when:** every tagged Android release is signed by the stable release key or fails before publication; a release-to-release in-place update is verified; and the distribution choice for Android developer verification is explicitly made before global enforcement affects the target audience.
+
 ## Article Read Management Concept (planned follow-up)
 
 ### Overview

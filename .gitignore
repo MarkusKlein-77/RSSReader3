@@ -81,3 +81,8 @@ local.properties
 /MyRSSReader/
 kotlin-js-store
 **/xcuserdata/**
+
+# Android release signing material
+*.jks
+*.keystore
+*.p12
