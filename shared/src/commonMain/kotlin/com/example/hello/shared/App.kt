@@ -490,7 +490,7 @@ private fun ArticleTile(
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = article.publishedAt,
+                        text = formatPublishedAt(article.publishedAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

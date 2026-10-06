@@ -66,7 +66,7 @@ Maintain the shared app state and Compose screens in `shared/commonMain`:
 - On first start, show a compact setup form for the Miniflux server URL and access token.
 - When already configured, show articles and provide a configuration icon in the top app bar.
 - Validate the server and credentials before saving; show connection progress and actionable errors without exposing the token.
-- Display article title, feed, date, and available summary/content. Include loading, empty, and retry states.
+- Display article title, feed, publication date, and available summary/content. Convert publication timestamps to the viewer's local system timezone for display without changing the source timestamp. Include loading, empty, and retry states.
 - Keep layout and interaction usable at phone, desktop, and browser sizes. Keep keyboard and screen-reader access in view when implementing fields and icon buttons.
 
 Keep UI state transitions and rendering in shared code. Do not add platform-specific duplicate screens.

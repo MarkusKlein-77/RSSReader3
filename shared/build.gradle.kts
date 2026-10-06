@@ -17,6 +17,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.ktor.client.core)
+            implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kamel.image.default)
             implementation(compose.runtime)

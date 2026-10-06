@@ -2,6 +2,7 @@
 agp = "8.12.0"
 composeMultiplatform = "1.8.2"
 kotlinxBrowser = "0.3"
+kotlinxDatetime = "0.6.2"
 kotlin = "2.2.10"
 ktor = "3.2.3"
 kamel = "1.0.6"
@@ -10,6 +11,7 @@ kamel = "1.0.6"
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.10.1" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version = "1.1.0" }
 kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinxBrowser" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktor" }
