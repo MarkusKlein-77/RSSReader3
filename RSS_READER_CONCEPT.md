@@ -20,6 +20,10 @@ This project is a Kotlin Multiplatform RSS reader that uses a user-provided Mini
 
 The app uses Ktor Client and JSON serialization in common code, with an HTTP engine selected per target. Keep dependency versions in `gradle/libs.versions.toml`.
 
+## General Responsive Layout Concept
+
+Shared UI should make use of available space on larger browser and desktop displays instead of keeping article tiles sized for a narrow viewport. When there is room, article tiles should be about 50% larger than the compact layout; on very wide screens, display no more than eight tiles in a row. Layouts should still adapt naturally to smaller screens and remain implemented in shared Compose UI.
+
 ## Step-by-Step Delivery
 
 ### 1. Preserve the runnable baseline
