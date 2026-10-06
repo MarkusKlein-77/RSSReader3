@@ -1,6 +1,5 @@
 package com.example.hello.shared
 
-import kotlinx.datetime.DateTimeFormatException
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -11,7 +10,7 @@ internal fun formatPublishedAt(
 ): String {
     val localDateTime = try {
         Instant.parse(publishedAt).toLocalDateTime(timeZone)
-    } catch (_: DateTimeFormatException) {
+    } catch (_: IllegalArgumentException) {
         return publishedAt
     }
 
