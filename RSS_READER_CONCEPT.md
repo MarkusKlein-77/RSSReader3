@@ -22,7 +22,7 @@ The app uses Ktor Client and JSON serialization in common code, with an HTTP eng
 
 ## General Responsive Layout Concept
 
-Shared UI should make use of available space on larger browser and desktop displays instead of keeping article tiles sized for a narrow viewport. When there is room, article tiles should be about 50% larger than the compact layout; on very wide screens, display no more than eight tiles in a row. Layouts should still adapt naturally to smaller screens and remain implemented in shared Compose UI.
+Shared UI should make use of available space on larger browser and desktop displays instead of keeping article tiles sized for a narrow viewport. On very wide screens, display no more than eight tiles in a row. As tile widths grow, preserve the established tile aspect ratio so the cards scale proportionally rather than stretching. Layouts should still adapt naturally to smaller screens and remain implemented in shared Compose UI.
 
 ## Step-by-Step Delivery
 

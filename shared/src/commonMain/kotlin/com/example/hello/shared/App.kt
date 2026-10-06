@@ -2,10 +2,10 @@ package com.example.hello.shared
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.aspectRatio
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -277,20 +278,28 @@ fun App(configurationStore: ConfigurationStore) {
                         if (showAllArticles) "No articles." else "No unread articles.",
                     )
                 }
-                LazyVerticalGrid(
-                    state = lazyGridState,
-                    columns = GridCells.Adaptive(minSize = 180.dp),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(articleEntries, key = { entry -> entry.article.id }) { entry ->
-                        ArticleTile(
-                            article = entry.article,
-                            onClick = { entry.article.url.takeIf(String::isNotBlank)?.let(openArticle) },
-                            markedForDeletion = entry.markedForDeletion,
-                        )
+                BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                    val tileSpacing = 12.dp
+                    val minimumTileWidth = 180.dp
+                    val columnCount = ((maxWidth + tileSpacing) / (minimumTileWidth + tileSpacing))
+                        .toInt()
+                        .coerceIn(1, 8)
+
+                    LazyVerticalGrid(
+                        state = lazyGridState,
+                        columns = GridCells.Fixed(columnCount),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                        verticalArrangement = Arrangement.spacedBy(tileSpacing),
+                    ) {
+                        items(articleEntries, key = { entry -> entry.article.id }) { entry ->
+                            ArticleTile(
+                                article = entry.article,
+                                onClick = { entry.article.url.takeIf(String::isNotBlank)?.let(openArticle) },
+                                markedForDeletion = entry.markedForDeletion,
+                            )
+                        }
                     }
                 }
             }
@@ -417,7 +426,7 @@ private fun ArticleTile(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(260.dp)
+            .aspectRatio(180f / 260f)
             .alpha(if (markedForDeletion) 0.55f else 1f)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
