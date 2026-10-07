@@ -106,7 +106,7 @@ fun App(configurationStore: ConfigurationStore) {
                 delay(5_000)
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
-                delay(20_000)
+                delay(30_000)
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
             } else {
