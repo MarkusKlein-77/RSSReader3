@@ -4,6 +4,10 @@
 
 This project is a Kotlin Multiplatform RSS reader that uses a user-provided Miniflux server as its article source. Android, JVM desktop, and browser WebAssembly builds share the Compose UI and application logic. The current delivery covers connection setup, persistent configuration, and article display; later product requirements can extend this foundation.
 
+## Mandatory Basic Rule: Verify Builds Through GitHub Actions
+
+Do not run local builds or tests. Commit and push the changes, then use the repository's GitHub Actions workflows as the required build and test verification. Check the workflow run and its jobs after pushing, and report their actual results. If a workflow fails, diagnose and fix the cause, then push and check the next run. Never substitute a local build for this CI verification.
+
 ## Repository Starting Point
 
 - `shared` contains the Miniflux client, shared application state, platform abstractions, and Compose UI. It targets Android, desktop JVM, and `wasmJs` and exposes the `App()` composable used by all three launchers.
@@ -59,7 +63,7 @@ Keep the settings interface common and implement it per target. Save the normali
 
 - **Android:** use app-private storage for the URL and a platform-protected secret store for the token (Android Keystore-backed encryption); do not store the token in plain preferences.
 - **JVM desktop:** use the operating system credential store for the token where available, with the server URL in normal application preferences. Document the behavior if no supported secret store exists rather than silently claiming encrypted storage.
-- **Wasm browser:** use origin-scoped browser storage for the URL and token. A JavaScript-readable cookie or `localStorage` is not a secure secret vault and is exposed to same-origin script/XSS; disclose this limitation and provide a clear disconnect/forget action. Do not enable cross-site cookies as a workaround for API CORS.
+- **Wasm browser:** save the URL and token in persistent, host-only cookies so configuration survives browser restarts. These cookies are JavaScript-readable and are not a secure secret vault; disclose this limitation and provide a clear disconnect/forget action. Do not enable cross-site cookies as a workaround for API CORS.
 
 **Done when:** configuration survives an app restart on each target and can be deleted; platform-specific storage tests or manual checks cover each implementation.
 
