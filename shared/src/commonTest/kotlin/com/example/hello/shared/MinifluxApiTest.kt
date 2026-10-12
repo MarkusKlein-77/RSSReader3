@@ -9,11 +9,57 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class MinifluxApiTest {
+    @Test
+    fun detectsRecentFeedCheckFromLatestFeedTimestamp() = runBlocking {
+        val engine = MockEngine { request ->
+            assertEquals("https://miniflux.example.com/v1/feeds", request.url.toString())
+            assertEquals("token-123", request.headers["X-Auth-Token"])
+            respond(
+                """[{"checked_at":"2026-10-12T09:00:00Z"},{"checked_at":"2026-10-12T09:55:00Z"}]""",
+                status = HttpStatusCode.OK,
+            )
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        val hasRecentCheck = api.hasRecentFeedCheck(
+            configuration = MinifluxConfiguration(
+                serverUrl = "https://miniflux.example.com",
+                accessToken = "token-123",
+            ),
+            now = Instant.parse("2026-10-12T10:00:00Z"),
+        )
+
+        assertTrue(hasRecentCheck)
+    }
+
+    @Test
+    fun reportsNoRecentFeedCheckWhenLatestTimestampIsAtLeastTenMinutesOld() = runBlocking {
+        val engine = MockEngine {
+            respond(
+                """[{"checked_at":"2026-10-12T09:49:59Z"},{"checked_at":"2026-10-12T09:50:00Z"}]""",
+                status = HttpStatusCode.OK,
+            )
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        val hasRecentCheck = api.hasRecentFeedCheck(
+            configuration = MinifluxConfiguration(
+                serverUrl = "https://miniflux.example.com",
+                accessToken = "token-123",
+            ),
+            now = Instant.parse("2026-10-12T10:00:00Z"),
+        )
+
+        assertFalse(hasRecentCheck)
+    }
+
     @Test
     fun refreshesConfiguredFeedsOnServer() = runBlocking {
         val engine = MockEngine { request ->

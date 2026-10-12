@@ -8,6 +8,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -15,6 +17,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Duration.Companion.minutes
 
 data class ArticleHeader(
     val id: Long,
@@ -46,6 +49,26 @@ class MinifluxApi(
 
     suspend fun refreshFeeds(configuration: MinifluxConfiguration) {
         request(configuration, "v1/feeds/refresh", put = true)
+    }
+
+    suspend fun hasRecentFeedCheck(
+        configuration: MinifluxConfiguration,
+        now: Instant = Clock.System.now(),
+    ): Boolean {
+        val response = request(configuration, "v1/feeds")
+        val latestCheckedAt = Json.parseToJsonElement(response).jsonArray.mapNotNull { element ->
+            val checkedAt = (element as? JsonObject)
+                ?.get("checked_at")
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?: return@mapNotNull null
+            try {
+                Instant.parse(checkedAt)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }.maxOrNull()
+        return latestCheckedAt != null && latestCheckedAt > now - 10.minutes
     }
 
     suspend fun loadArticles(

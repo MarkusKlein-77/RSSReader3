@@ -53,6 +53,8 @@ Keep network DTOs separate from UI/domain models so API shape changes do not lea
 
 Implement the repository with authenticated JSON requests. Send the access token in Miniflux's `X-Auth-Token` request header; never put it in a URL, log, crash report, or CI output. Use the server's `/v1/me` endpoint to validate saved/new credentials and `/v1/entries` to fetch the initial article page, starting with unread entries and a bounded page size. Handle HTTP errors, malformed responses, timeouts, and empty results as distinct, user-visible outcomes.
 
+Before requesting a server-side feed refresh, fetch `/v1/feeds` and inspect the feeds' `checked_at` timestamps. Use the most recent valid timestamp across the feeds: if it is less than 10 minutes old, skip the server refresh and load articles once without the delayed follow-up. If no valid timestamp is available or the latest check is at least 10 minutes old, request a server refresh, load articles after the existing 5-second wait, then perform the existing second article load after 30 seconds.
+
 Test the adapter using a mocked HTTP engine, including successful authentication, unauthorized credentials, server errors, and article parsing. Avoid requiring a production Miniflux instance in CI.
 
 **Done when:** repository tests exercise requests and response mapping without network access.
@@ -253,6 +255,7 @@ These are GitHub Actions runtime and runner-image annotations, not Kotlin or Gra
 - First launch asks for a Miniflux URL and access token; returning users can edit or forget them from the top-bar configuration action.
 - Credentials are validated before being saved and are sent only in the `X-Auth-Token` header.
 - A successful connection displays a bounded list of articles; loading, empty, authentication, network, and server-error states are distinguishable.
+- Before a server refresh, recent feed `checked_at` timestamps (under 10 minutes old) suppress the server refresh and 30-second follow-up article load; otherwise the existing refresh-and-two-load sequence runs.
 - The app makes no assumption that the Wasm browser can bypass Miniflux CORS, mixed-content rules, or browser storage security limits.
 - Unit/adapter tests and the CI builds cover Android APK, JVM desktop distribution, and Wasm browser distribution; PRs do not deploy.
 

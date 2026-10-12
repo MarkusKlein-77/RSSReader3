@@ -102,13 +102,18 @@ fun App(configurationStore: ConfigurationStore) {
         previousVisibleIndex.value = null
         try {
             if (refreshServer) {
-                api.refreshFeeds(configurationToLoad)
-                delay(5_000)
+                val hasRecentFeedCheck = api.hasRecentFeedCheck(configurationToLoad)
+                if (!hasRecentFeedCheck) {
+                    api.refreshFeeds(configurationToLoad)
+                    delay(5_000)
+                }
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
-                delay(30_000)
-                articleEntries = api.loadArticles(configurationToLoad, includeRead)
-                    .map { ArticleListEntry(it) }
+                if (!hasRecentFeedCheck) {
+                    delay(30_000)
+                    articleEntries = api.loadArticles(configurationToLoad, includeRead)
+                        .map { ArticleListEntry(it) }
+                }
             } else {
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
