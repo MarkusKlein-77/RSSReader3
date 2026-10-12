@@ -106,8 +106,7 @@ class MinifluxApiTest {
             assertEquals("token-123", request.headers["X-Auth-Token"])
             val body = request.body as? TextContent
             assertTrue(body != null)
-            assertTrue((body?.text ?: "").contains("\"entry_ids\":[11,22,33]"))
-            assertTrue((body?.text ?: "").contains("\"status\":\"read\""))
+            assertEquals("{\"entry_ids\":[11,22,33],\"status\":\"read\"}", body?.text)
             respond("", status = HttpStatusCode.NoContent, headers = headersOf("Content-Type", ContentType.Application.Json.toString()))
         }
 

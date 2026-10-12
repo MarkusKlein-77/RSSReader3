@@ -43,7 +43,7 @@ class MinifluxApi(
 
     suspend fun markAllArticlesRead(configuration: MinifluxConfiguration, articleIds: List<Long>) {
         if (articleIds.isEmpty()) return
-        val payload = """{"entry_ids":[${articleIds.joinToString()}],"status":"read"}"""
+        val payload = """{"entry_ids":[${articleIds.joinToString(separator = ",")}],"status":"read"}"""
         requestWithBody(configuration, "v1/entries", payload)
     }
 
