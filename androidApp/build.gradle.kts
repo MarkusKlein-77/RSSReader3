@@ -35,17 +35,16 @@ android {
         }
     }
 
-    gradle.taskGraph.whenReady {
-        val releasePackagingTasks = allTasks.filter { task ->
-            task.name.contains("Release") &&
-                (task.name.startsWith("assemble") ||
-                    task.name.startsWith("package") ||
-                    task.name.startsWith("bundle"))
-        }
-        check(releasePackagingTasks.isEmpty() || hasReleaseSigning) {
-            "Release packaging requires ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD, " +
-                "ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD."
-        }
+    val requestedReleasePackaging = gradle.startParameter.taskNames.any { requestedTask ->
+        val taskName = requestedTask.substringAfterLast(':')
+        taskName.contains("Release") &&
+            (taskName.startsWith("assemble") ||
+                taskName.startsWith("package") ||
+                taskName.startsWith("bundle"))
+    }
+    check(!requestedReleasePackaging || hasReleaseSigning) {
+        "Release packaging requires ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD, " +
+            "ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD."
     }
 
     defaultConfig {
