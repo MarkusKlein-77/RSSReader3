@@ -32,7 +32,7 @@ Shared UI should make use of available space on larger browser and desktop displ
 
 ### 1. Preserve the runnable baseline
 
-Use CI/CD as the primary place to run the build gates: `:shared:allTests`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Run these locally only when the required toolchain is already available; keep each platform launcher calling the same shared `App()`.
+Use CI/CD as the primary place to run the build gates: `:shared:desktopTest`, `:androidApp:assembleDebug`, `:desktopApp:createDistributable`, and `:webApp:wasmJsBrowserDistribution`. Run these locally only when the required toolchain is already available; keep each platform launcher calling the same shared `App()`.
 
 **Done when:** the baseline builds on a clean checkout and the three launchers still point to the shared UI.
 
@@ -93,7 +93,7 @@ Test the deployed subpath, asset URLs, configuration persistence, and a real bro
 
 ### 7. Extend CI/CD as a merge gate
 
-Keep the existing independent Android, JVM, and Wasm artifact jobs and their artifact outputs. Add a test job (or test steps before packaging) for `:shared:allTests`; keep the platform build jobs as checks for target-specific compilation. Ensure pull requests build all three platforms without deployment, and retain the existing rule that Pages deployment runs only for non-PR events. The Pages deployment needs its existing repository token only in the deployment job.
+Keep the existing independent Android, JVM, and Wasm artifact jobs and their artifact outputs. Add a test job (or test steps before packaging) for `:shared:desktopTest` to exercise common tests on the JVM; keep the platform build jobs as checks for target-specific compilation. Ensure pull requests build all three platforms without deployment, and retain the existing rule that Pages deployment runs only for non-PR events. The Pages deployment needs its existing repository token only in the deployment job.
 
 **Done when:** a pull request proves common tests and all three platform builds pass, and a push deploys the Wasm distribution only after the Wasm build succeeds.
 

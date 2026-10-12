@@ -27,29 +27,7 @@ jobs:
           cache: gradle
 
       - name: Run shared tests
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon --console=plain :shared:allTests 2>&1 | tee "$RUNNER_TEMP/shared-tests.log"
-
-      - name: Report shared test failure details
-        if: failure()
-        shell: bash
-        run: |
-          log_file="$RUNNER_TEMP/shared-tests.log"
-          if [[ ! -f "$log_file" ]]; then
-            echo "::error::Shared test task did not produce a log file."
-            exit 0
-          fi
-
-          echo "### Shared test failure details" >> "$GITHUB_STEP_SUMMARY"
-          echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          tail -n 50 "$log_file" | tee -a "$GITHUB_STEP_SUMMARY" | while IFS= read -r line; do
-            escaped=${line//'%'/'%25'}
-            escaped=${escaped//$'\r'/'%0D'}
-            escaped=${escaped//$'\n'/'%0A'}
-            echo "::error title=Shared test output::$escaped"
-          done
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        run: ./gradlew --no-daemon --console=plain :shared:desktopTest
 
   build-android:
     name: Build Android APK
