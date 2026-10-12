@@ -81,7 +81,7 @@ class MinifluxApiTest {
     @Test
     fun marksSingleEntryAsRead() = runBlocking {
         val engine = MockEngine { request ->
-            assertEquals("https://miniflux.example.com/v1/entries/42", request.url.toString())
+            assertEquals("https://miniflux.example.com/v1/entries", request.url.toString())
             assertEquals("token-123", request.headers["X-Auth-Token"])
             val body = request.body as? TextContent
             assertTrue(body != null)
