@@ -5,6 +5,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,7 +13,7 @@ import kotlin.test.assertNull
 
 class ReleaseUpdateCheckerTest {
     @Test
-    fun returnsNewerAndroidReleaseWithVerifiedMetadata() = runTest {
+    fun returnsNewerAndroidReleaseWithVerifiedMetadata() = runBlocking {
         val checker = checker(currentBuildNumber = 62_000)
 
         try {
@@ -31,7 +32,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun returnsNoUpdateWhenReleaseIsNotNewer() = runTest {
+    fun returnsNoUpdateWhenReleaseIsNotNewer() = runBlocking {
         val checker = checker(currentBuildNumber = 63_001)
 
         try {
@@ -42,7 +43,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsReleaseAssetsOutsideTheRepository() = runTest {
+    fun rejectsReleaseAssetsOutsideTheRepository() = runBlocking {
         val checker = checker(
             currentBuildNumber = 62_000,
             releaseBody = makeReleaseBody().replace(
@@ -59,7 +60,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsPrereleases() = runTest {
+    fun rejectsPrereleases() = runBlocking {
         val checker = checker(
             currentBuildNumber = 62_000,
             releaseBody = makeReleaseBody().replace("\"prerelease\": false", "\"prerelease\": true"),
@@ -73,7 +74,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsMetadataForADifferentRelease() = runTest {
+    fun rejectsMetadataForADifferentRelease() = runBlocking {
         val checker = checker(
             currentBuildNumber = 62_000,
             metadataBody = makeMetadataBody().replace("\"tagName\": \"v0.1.7\"", "\"tagName\": \"v0.1.6\""),
@@ -87,7 +88,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun reportsGitHubHttpFailures() = runTest {
+    fun reportsGitHubHttpFailures() = runBlocking {
         val checker = ReleaseUpdateChecker(
             currentBuildNumber = 62_000,
             client = HttpClient(MockEngine { respond("unavailable", HttpStatusCode.ServiceUnavailable) }) {
