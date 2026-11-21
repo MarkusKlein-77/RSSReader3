@@ -103,7 +103,7 @@ private class AndroidAppUpdater(
                     }
                 }
             }
-            if (digest.toHex() != update.assetSha256) {
+            if (digest.digest().toHex() != update.assetSha256) {
                 apk.delete()
                 throw IllegalStateException("The downloaded update failed its SHA-256 integrity check.")
             }
