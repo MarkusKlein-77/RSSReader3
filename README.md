@@ -4,7 +4,7 @@ A Kotlin Multiplatform RSS reader for Android, Windows desktop, and the web. Con
 
 Download the current build:
 
-- [Android APK](https://markusklein-77.github.io/RSSReader/updates/latest/RSSReader-android.apk)
+- [Android APK](https://onkelholle.de/RSSReader/updates/latest/RSSReader-android.apk)
 - [Windows desktop app (x64)](https://github.com/MarkusKlein-77/RSSReader3/releases/latest/download/RSSReader-windows-x64.zip)
 
 Android checks for newer successful builds and offers the APK for installation after you confirm. Android's package installer still requires its own confirmation.

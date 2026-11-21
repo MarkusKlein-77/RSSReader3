@@ -18,10 +18,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 const val BUILD_UPDATE_MANIFEST_URL =
-    "https://markusklein-77.github.io/RSSReader/updates/latest-build.json"
+    "https://onkelholle.de/RSSReader/updates/latest-build.json"
 
 private const val BUILD_ASSET_BASE_URL =
-    "https://markusklein-77.github.io/RSSReader/updates/builds/"
+    "https://onkelholle.de/RSSReader/updates/builds/"
 private const val BUILD_RUN_PAGE_BASE_URL =
     "https://github.com/MarkusKlein-77/RSSReader3/actions/runs/"
 

@@ -21,7 +21,7 @@ class BuildUpdateCheckerTest {
         assertEquals(1421L, update?.buildNumber)
         assertEquals("a".repeat(40), update?.commitSha)
         assertEquals(
-            "https://markusklein-77.github.io/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
+            "https://onkelholle.de/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
             update?.assetUrl,
         )
         assertEquals("a".repeat(64), update?.assetSha256)
@@ -39,7 +39,7 @@ class BuildUpdateCheckerTest {
     @Test
     fun rejectsUntrustedAssetUrl() = runBlocking {
         val manifest = validManifest().replace(
-            "https://markusklein-77.github.io/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
+            "https://onkelholle.de/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
             "https://example.com/RSSReader-android.apk",
         )
         val checker = checker(manifest)
@@ -126,7 +126,7 @@ class BuildUpdateCheckerTest {
           "summary": "Build update",
           "assets": {
             "android": {
-              "url": "https://markusklein-77.github.io/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
+              "url": "https://onkelholle.de/RSSReader/updates/builds/000000001421-${"a".repeat(12)}/RSSReader-android.apk",
               "sha256": "${"a".repeat(64)}"
             }
           }
