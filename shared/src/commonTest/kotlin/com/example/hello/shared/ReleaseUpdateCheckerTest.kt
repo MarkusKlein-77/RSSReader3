@@ -13,7 +13,7 @@ import kotlin.test.assertNull
 
 class ReleaseUpdateCheckerTest {
     @Test
-    fun returnsNewerAndroidReleaseWithVerifiedMetadata() = runBlocking {
+    fun returnsNewerAndroidReleaseWithVerifiedMetadata() = runBlocking<Unit> {
         val checker = checker(currentBuildNumber = 62_000)
 
         try {
@@ -32,7 +32,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun returnsNoUpdateWhenReleaseIsNotNewer() = runBlocking {
+    fun returnsNoUpdateWhenReleaseIsNotNewer() = runBlocking<Unit> {
         val checker = checker(currentBuildNumber = 63_001)
 
         try {
@@ -43,7 +43,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsReleaseAssetsOutsideTheRepository() = runBlocking {
+    fun rejectsReleaseAssetsOutsideTheRepository() = runBlocking<Unit> {
         val checker = checker(
             currentBuildNumber = 62_000,
             releaseBody = makeReleaseBody().replace(
@@ -60,7 +60,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsPrereleases() = runBlocking {
+    fun rejectsPrereleases() = runBlocking<Unit> {
         val checker = checker(
             currentBuildNumber = 62_000,
             releaseBody = makeReleaseBody().replace("\"prerelease\": false", "\"prerelease\": true"),
@@ -74,7 +74,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun rejectsMetadataForADifferentRelease() = runBlocking {
+    fun rejectsMetadataForADifferentRelease() = runBlocking<Unit> {
         val checker = checker(
             currentBuildNumber = 62_000,
             metadataBody = makeMetadataBody().replace("\"tagName\": \"v0.1.7\"", "\"tagName\": \"v0.1.6\""),
@@ -88,7 +88,7 @@ class ReleaseUpdateCheckerTest {
     }
 
     @Test
-    fun reportsGitHubHttpFailures() = runBlocking {
+    fun reportsGitHubHttpFailures() = runBlocking<Unit> {
         val checker = ReleaseUpdateChecker(
             currentBuildNumber = 62_000,
             client = HttpClient(MockEngine { respond("unavailable", HttpStatusCode.ServiceUnavailable) }) {
