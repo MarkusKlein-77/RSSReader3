@@ -236,7 +236,7 @@ class ReleaseUpdateChecker(
     )
 
     private companion object {
-        const val REQUEST_TIMEOUT_MILLIS = 12_000
+        const val REQUEST_TIMEOUT_MILLIS = 12_000L
         const val MAX_RESPONSE_LENGTH = 256 * 1024
         const val MAX_SUMMARY_LENGTH = 320
         const val MAX_SUPPORTED_VERSION_CODE = 2_100_000_000L
