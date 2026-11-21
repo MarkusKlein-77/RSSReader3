@@ -56,6 +56,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -68,6 +69,10 @@ private data class ArticleListEntry(
 fun App(configurationStore: ConfigurationStore) {
     val api = remember { MinifluxApi() }
     DisposableEffect(api) { onDispose { api.close() } }
+    val appUpdater = rememberAppUpdater()
+    DisposableEffect(appUpdater) {
+        onDispose { appUpdater?.close() }
+    }
     val scope = rememberCoroutineScope()
     val openArticle = rememberArticleOpener()
     val initialConfiguration = remember(configurationStore) { configurationStore.load() }
@@ -87,8 +92,42 @@ fun App(configurationStore: ConfigurationStore) {
     var isConnecting by remember { mutableStateOf(false) }
     var markAllReadInProgress by remember { mutableStateOf(false) }
     var pendingReadIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
+    var isCheckingForUpdate by remember { mutableStateOf(false) }
+    var isInstallingUpdate by remember { mutableStateOf(false) }
     val lazyGridState: LazyGridState = rememberLazyGridState()
     val previousVisibleIndex = remember { mutableStateOf<Int?>(null) }
+
+    fun checkForUpdates(showCurrentBuild: Boolean) {
+        val updater = appUpdater ?: return
+        if (isCheckingForUpdate) return
+        scope.launch {
+            isCheckingForUpdate = true
+            updateStatus = "Checking for updates..."
+            updateError = null
+            try {
+                availableUpdate = updater.checkForUpdate()
+                updateStatus = if (availableUpdate == null && showCurrentBuild) {
+                    "RSS Reader is up to date."
+                } else {
+                    null
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                updateStatus = null
+                updateError = exception.message ?: "Could not check for updates. Try again later."
+            } finally {
+                isCheckingForUpdate = false
+            }
+        }
+    }
+
+    LaunchedEffect(appUpdater) {
+        if (appUpdater != null) checkForUpdates(showCurrentBuild = false)
+    }
 
     suspend fun loadArticles(
         configurationToLoad: MinifluxConfiguration,
@@ -272,6 +311,17 @@ fun App(configurationStore: ConfigurationStore) {
                 }
             }
 
+            updateError?.let { message ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(message, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { updateError = null }) { Text("Dismiss") }
+                }
+            }
+
             if (configuration == null) {
                 Text("Configure a Miniflux server to get started.")
             } else {
@@ -345,6 +395,19 @@ fun App(configurationStore: ConfigurationStore) {
                         configurationStore.storageNotice?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall)
                         }
+                        if (appUpdater != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    enabled = !isCheckingForUpdate && !isInstallingUpdate,
+                                    onClick = { checkForUpdates(showCurrentBuild = true) },
+                                ) {
+                                    Text(if (isCheckingForUpdate) "Checking..." else "Check for updates")
+                                }
+                                updateStatus?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
                         validationError?.let {
                             Text(it, color = MaterialTheme.colorScheme.error)
                         }
@@ -414,6 +477,75 @@ fun App(configurationStore: ConfigurationStore) {
                             ) {
                                 Text("Cancel")
                             }
+                        }
+                    }
+                },
+            )
+        }
+
+        val update = availableUpdate
+        if (update != null && !showConfiguration) {
+            AlertDialog(
+                onDismissRequest = {
+                    availableUpdate = null
+                    updateError = null
+                },
+                title = { Text("Update available") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Build ${update.buildNumber} is ready to install.")
+                        Text(update.summary)
+                        Text(
+                            "Commit ${update.commitSha.take(7)} · ${update.builtAt}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        updateError?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !isInstallingUpdate,
+                        onClick = {
+                            val updater = appUpdater ?: return@TextButton
+                            scope.launch {
+                                isInstallingUpdate = true
+                                updateError = null
+                                try {
+                                    updater.install(update)
+                                    availableUpdate = null
+                                    updateStatus = "The system update installer was opened."
+                                } catch (exception: CancellationException) {
+                                    throw exception
+                                } catch (exception: Exception) {
+                                    updateError = exception.message
+                                        ?: "Could not start the update. Try again later."
+                                } finally {
+                                    isInstallingUpdate = false
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (isInstallingUpdate) "Preparing..." else "Update")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            enabled = !isInstallingUpdate,
+                            onClick = { openArticle(update.buildPageUrl) },
+                        ) {
+                            Text("Build details")
+                        }
+                        TextButton(
+                            enabled = !isInstallingUpdate,
+                            onClick = {
+                                availableUpdate = null
+                                updateError = null
+                            },
+                        ) {
+                            Text("Later")
                         }
                     }
                 },

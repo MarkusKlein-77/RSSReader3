@@ -12,7 +12,7 @@ Do not run local builds or tests. Commit and push the changes, then use the repo
 
 - `shared` contains the Miniflux client, shared application state, platform abstractions, and Compose UI. It targets Android, desktop JVM, and `wasmJs` and exposes the `App()` composable used by all three launchers.
 - `androidApp`, `desktopApp`, and `webApp` are platform launchers. Keep platform-specific setup in these modules or their source sets, not in the common UI.
-- `.github/workflows/build-platform-artifacts.yml` builds an Android APK, a JVM desktop distribution, and a Wasm browser distribution. On non-PR events it publishes the Wasm files to the `RSSReader` directory in the Pages repository.
+- `.github/workflows/build-platform-artifacts.yml` builds an Android APK, a JVM desktop distribution, and a Wasm browser distribution. On successful normal builds it also publishes the signed Android APK and build manifest alongside the Wasm files in the Pages repository.
 
 ## Proposed Module Responsibilities
 
@@ -99,25 +99,23 @@ Keep the existing independent Android, JVM, and Wasm artifact jobs and their art
 
 ## Android Signing and Distribution Concept (reviewed 2026-10-06)
 
-### Current issue
+### Signing requirements
 
-Android requires every installable APK to be signed, and an installed app can only be updated by an APK signed with the same app-signing certificate (or a supported signing-key rotation lineage). The `androidApp` Gradle build previously configured release signing only when all four `ANDROID_*` values were present. The tagged-release workflow also warned and continued when any value was missing, so it could publish an APK that was not signed with the key used for previous releases. The Gradle release task and tagged workflow now fail if signing inputs are missing. Release APKs are verified against the configured certificate fingerprint before publication.
-
-The application ID is currently `de.onkelholle.RSSReader`. Treat it and the release signing identity as persistent app identity. Do not change either during routine refactoring or key-secret updates.
+Android requires every installable APK to be signed, and an installed app can only be updated by an APK signed with the same app-signing certificate (or a supported signing-key rotation lineage). The application ID is currently `de.onkelholle.RSSReader`. Treat it and the signing identity as persistent app identity. Do not change either during routine refactoring or key-secret updates.
 
 ### Recommended signing model
 
-Keep direct APK distribution through GitHub Releases for now; it does not require Google Play or a Play Console account. Use one dedicated, long-lived release keystore for this app:
+Keep direct APK distribution outside Google Play; it does not require a Play Console account. Use one dedicated, long-lived signing keystore for this app and sign every normal build that is offered as an in-place update:
 
-1. Generate the release key once and keep an encrypted offline backup in a separate secure location. Record the key alias, the app ID, and the signing certificate SHA-256 fingerprint in the project’s private release records. The repository ignores `.jks`, `.keystore`, and `.p12` files; never commit the keystore or its passwords.
-2. Add `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as GitHub Actions repository secrets. Store the certificate fingerprint in the `ANDROID_SIGNING_CERT_SHA256` Actions variable. Restrict who can create release tags, since tagged workflows can access signing secrets.
-3. The tagged workflow decodes the keystore into the ephemeral runner temp directory. Gradle fails release packaging if any of the four signing values is missing. Do not publish an unsigned or debug-signed release APK as a fallback. Non-release builds continue to use the normal Android debug key and do not need release secrets.
-4. Before publication, the workflow verifies the APK using Android SDK `apksigner` and checks that its signer certificate SHA-256 matches `ANDROID_SIGNING_CERT_SHA256`. Preserve an increasing `versionCode` for every release.
-5. Test updates using the actual release artifact: install a prior signed release, then install the new APK with `adb install -r`. Confirm that data remains and the package updates without an uninstall. A debug APK is not a valid substitute for this update test.
+1. Generate the signing key once and keep an encrypted offline backup in a separate secure location. Record the key alias, app ID, and signing certificate SHA-256 fingerprint in private project records. The repository ignores `.jks`, `.keystore`, and `.p12` files; never commit the keystore or its passwords.
+2. Add `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as GitHub Actions repository secrets. Store the certificate fingerprint in the `ANDROID_SIGNING_CERT_SHA256` Actions variable. Restrict who can push to the distribution branch or trigger builds that publish signed packages.
+3. Every workflow that produces an APK intended to update an installed app must use the same persistent keystore. Gradle must fail that distributable build if any signing value is missing. A CI debug APK signed with a runner-generated debug key is not a valid update for an installation signed by another key.
+4. Before making an APK available to the updater, the workflow verifies it using Android SDK `apksigner` and checks that its signer certificate SHA-256 matches `ANDROID_SIGNING_CERT_SHA256`. Preserve an increasing `versionCode` for every updater-distributed build.
+5. Test updates using actual normal-build artifacts: install one signed build, then install the next APK with `adb install -r`. Confirm that data remains and the package updates without an uninstall. A debug APK is not a valid substitute for this update test.
 
 To obtain the fingerprint locally without uploading the keystore, run `keytool -list -v -keystore <path-to-p12> -storetype PKCS12 -alias <key-alias>` and use the certificate's SHA-256 value (colons are accepted) as the `ANDROID_SIGNING_CERT_SHA256` Actions variable. Never put the fingerprint in a secret-bearing command line; it is public certificate data.
 
-For direct APK distribution, loss of the release key can permanently prevent updates to existing installations. Do not rotate or replace it casually. If rotation ever becomes necessary, use Android’s supported signing-key rotation and proof-of-rotation tooling, verify device/API compatibility, and test upgrades from prior releases before shipping. Play App Signing is a separate distribution option: it requires a Play Console account and is not needed for the current GitHub APK workflow.
+Loss of the signing key can permanently prevent updates to existing installations. Do not rotate or replace it casually. If rotation ever becomes necessary, use Android’s supported signing-key rotation and proof-of-rotation tooling, verify device/API compatibility, and test upgrades from prior builds before distributing the new APK. Play App Signing is a separate distribution option: it requires a Play Console account and is not needed for the current direct-APK distribution concept.
 
 ### Android developer verification and the account question
 
@@ -125,13 +123,49 @@ An Android account is **not required to generate a cryptographically signed APK 
 
 The guide also describes account-avoiding alternatives, with tradeoffs:
 
-- **Limited distribution:** no identity verification, but distribution is limited to up to 20 invited devices. This fits personal testing, not a public GitHub release.
+- **Limited distribution:** no identity verification, but distribution is limited to up to 20 invited devices. This fits personal testing, not broad distribution.
 - **Unverified sideloading:** no developer account, but users may have to use Android’s advanced sideloading flow and accept additional safeguards. This is a higher-friction fallback, not a dependable consumer update experience.
 - **Verified external distribution:** intended for wider distribution outside Play. It involves Android Developer Console registration and identity verification, but does not require publishing in the Play Store or creating a Play Console listing.
 
-Therefore, keep the signing design independent of any Google account and continue using GitHub Releases while account-free sideloading meets the audience’s needs. Before the 2027 expansion, decide whether to accept the extra unverified-install flow or register through Android Developer Console for the normal install/update experience. Reuse the same app ID and signing key for registration; do not create a second “verified” build identity. Recheck the official rollout and account requirements before implementing registration, since the policy and console procedures may change.
+Keep the signing design independent of any Google account. The update concept below checks ordinary CI builds rather than requiring a GitHub Release or tag; Android's account and sideloading requirements still apply to every APK distributed this way. Before the 2027 expansion, decide whether to accept the extra unverified-install flow or register through Android Developer Console for the normal install/update experience. Reuse the same app ID and signing key for registration; do not create a second “verified” build identity. Recheck the official rollout and account requirements before implementing registration, since the policy and console procedures may change.
 
-**Done when:** every tagged Android release is signed by the stable release key or fails before publication; a release-to-release in-place update is verified; and the distribution choice for Android developer verification is explicitly made before global enforcement affects the target audience.
+**Done when:** every Android build offered as an update is signed by the stable app key or fails before publication; an in-place update from one such build to the next is verified; and the distribution choice for Android developer verification is explicitly made before global enforcement affects the target audience.
+
+## Normal Build Update Check and User-Approved Update Concept
+
+### Goal and build source
+
+Notify users when a newer normal build is available and let them start updating after explicitly accepting an in-app prompt. This is a build-based update channel, not a check for versioned GitHub Releases; it must work for each eligible successful build without requiring a tag or release. Checking for an update must never install or replace the app silently.
+
+Use the newest complete, successful build intended for users from the distribution branch (for example, `main` or `master`). Do not offer pull-request, failed, or incomplete builds as updates. Each eligible build should publish the Android APK plus a small machine-readable `latest-build.json` manifest to the existing public GitHub Pages site. The manifest should identify the build (monotonic CI build number, commit SHA, and build time), and include the APK's URL and SHA-256 digest. It may also include the commit subject as a short change summary.
+
+GitHub Actions workflow artifacts can be useful for CI inspection, but their retention period and download access make them unsuitable as the updater's public endpoint. Publish the Android APK and manifest under the existing Pages site's `RSSReader/updates/` path, accessible without a GitHub token. The Windows desktop updater is explicitly deferred; the current Windows package is larger than Pages' per-file limit and no external package host is configured.
+
+### Build discovery and versioning
+
+- Fetch `latest-build.json` over HTTPS without sending a GitHub or Miniflux credential. Compare its monotonically increasing build number with the installed Android `versionCode`; use the commit SHA as an additional identity, not as the ordering rule. Keep `versionCode` increasing for each update-capable build.
+- Publish a complete manifest only after the Android build, Wasm build, and shared tests succeed. The Android entry must point to the known APK; reject a missing asset, malformed identifiers, or unsupported platforms rather than guessing URLs.
+- Check once after startup without blocking the app, and provide a manual **Check for updates** action in settings. Avoid repeated checks in one session and use a modest timeout.
+- Show the available build number, short commit SHA, build time, and change summary, with **Update**, **Later**, and a link to the build information. Do not download until the user chooses **Update**. Remembering a dismissed build is optional; it must not suppress a manual check.
+
+### Platform update flow
+
+- **Android:** After acceptance, download the APK to app-private storage and hand it to Android's package installer using a `content://` URI from a `FileProvider`. The user must approve Android's installer confirmation, and may need to allow installs from this app in system settings. Request unknown-source install permission only when required. Android's installer must enforce the existing package ID and signing-certificate continuity; never uninstall first or attempt a silent install. Preserve app data through the normal in-place package update.
+- **Windows desktop:** Automatic updates are disabled for now. Continue using the existing desktop build artifact and manual distribution until a public package host that supports its file size is selected.
+- **WebAssembly:** There is no client-side installer or separate update package. Each successful normal build can be deployed to GitHub Pages; the browser obtains it through its normal page reload/update behavior. Browser cache behavior and any future service worker must be considered before claiming the user is running the newest build.
+
+### Integrity, privacy, and failure behavior
+
+- Use only HTTPS manifest and package URLs from the configured build source. Verify the SHA-256 digest before handing an asset to the installer or extracting it. Because the manifest and package share a host, a checksum protects against corruption but is not independent publisher authentication; consider signing the manifest if stronger authenticity is required.
+- On Android, rely on the package installer to reject APKs with a mismatched app identity or signing key, consistent with the signing requirements above. Do not weaken signature checks to make an update succeed. Every normal build offered to users must use the persistent app signing key, not an ephemeral CI debug key.
+- Keep the update checker independent of Miniflux configuration. Send no Miniflux URL, access token, or article data to GitHub. Do not execute downloaded files or extract archives before the user approves the update and the asset has passed validation.
+- Make network errors, invalid manifests/build numbers, missing assets, digest failures, insufficient storage/permissions, and installation failures visible and actionable. Leave the currently installed app usable when an update fails; provide a manual build-page link as a fallback.
+
+### Delivery and verification
+
+Implement manifest lookup and build comparison behind a testable update-check abstraction, with the Android download/installer handler. Test newer, current, and malformed build identifiers; missing assets; network failures; and integrity failures. For Android, verify consecutive normal builds signed with the same key update a prior installation in place and that Android still presents its installer confirmation. Verify the web deployment refreshes normally after each eligible build.
+
+**Done when:** each eligible successful normal build is discoverable through the public manifest; Android users are offered the latest build and a short change summary; no download or installation begins before in-app approval; the operating system retains final control of Android installation; and failed checks or updates do not damage the installed app.
 
 ## Article Read Management Concept (planned follow-up)
 

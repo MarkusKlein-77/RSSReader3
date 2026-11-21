@@ -17,6 +17,12 @@ android {
     val releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
     val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toLongOrNull()
+    val ciRunAttempt = System.getenv("GITHUB_RUN_ATTEMPT")?.toLongOrNull() ?: 1L
+    val buildNumber = ciRunNumber?.let { it * 1_000L + ciRunAttempt } ?: 6L
+    check(buildNumber in 1..2_100_000_000L) {
+        "The generated Android build number is outside the supported versionCode range."
+    }
     val hasReleaseSigning = listOf(
         releaseKeystoreFile,
         releaseKeystorePassword,
@@ -51,7 +57,7 @@ android {
         applicationId = "de.onkelholle.RSSReader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
+        versionCode = buildNumber.toInt()
         versionName = "0.1.4"
     }
 

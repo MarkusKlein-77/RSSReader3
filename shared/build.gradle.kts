@@ -38,6 +38,7 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.security.crypto)
+            implementation(libs.androidx.core)
             implementation(libs.ktor.client.android)
         }
         wasmJsMain.dependencies {
