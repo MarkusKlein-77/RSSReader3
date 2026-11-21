@@ -25,9 +25,8 @@ actual fun rememberAppUpdater(): AppUpdater? {
 private class AndroidAppUpdater(
     private val context: Context,
 ) : AppUpdater {
-    private val checker = BuildUpdateChecker(
+    private val checker = ReleaseUpdateChecker(
         currentBuildNumber = installedBuildNumber(),
-        platformAssetName = "android",
     )
 
     override suspend fun checkForUpdate(): AppUpdate? = checker.checkForUpdate()

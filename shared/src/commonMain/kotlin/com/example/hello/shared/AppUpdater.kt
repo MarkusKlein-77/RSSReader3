@@ -6,33 +6,34 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
-import io.ktor.http.URLBuilder
-import kotlinx.datetime.Clock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
-const val BUILD_UPDATE_MANIFEST_URL =
-    "https://onkelholle.de/RSSReader/updates/latest-build.json"
-
-private const val BUILD_ASSET_BASE_URL =
-    "https://onkelholle.de/RSSReader/updates/builds/"
-private const val BUILD_RUN_PAGE_BASE_URL =
-    "https://github.com/MarkusKlein-77/RSSReader3/actions/runs/"
+private const val LATEST_RELEASE_API_URL =
+    "https://api.github.com/repos/MarkusKlein-77/RSSReader3/releases/latest"
+private const val RELEASE_DOWNLOAD_BASE_URL =
+    "https://github.com/MarkusKlein-77/RSSReader3/releases/download/"
+private const val RELEASE_PAGE_BASE_URL =
+    "https://github.com/MarkusKlein-77/RSSReader3/releases/tag/"
+private const val ANDROID_APK_NAME = "RSSReader-android.apk"
+private const val ANDROID_UPDATE_METADATA_NAME = "RSSReader-android-update.json"
 
 data class AppUpdate(
+    val versionName: String,
     val buildNumber: Long,
     val commitSha: String,
     val builtAt: String,
     val summary: String,
     val assetUrl: String,
     val assetSha256: String,
-    val buildPageUrl: String,
+    val releasePageUrl: String,
 )
 
 interface AppUpdater {
@@ -41,49 +42,39 @@ interface AppUpdater {
     fun close()
 }
 
-class BuildUpdateChecker(
+class ReleaseUpdateChecker(
     private val currentBuildNumber: Long,
-    private val platformAssetName: String,
     private val client: HttpClient = HttpClient { install(HttpTimeout) },
 ) {
     suspend fun checkForUpdate(): AppUpdate? {
-        val response = client.get(
-            URLBuilder(BUILD_UPDATE_MANIFEST_URL).apply {
-                parameters.append("cacheBust", Clock.System.now().toEpochMilliseconds().toString())
-            }.build(),
-        ) {
-            timeout { requestTimeoutMillis = 12_000 }
-            headers.append(HttpHeaders.CacheControl, "no-cache")
-        }
-        if (response.status.value != 200) {
-            throw UpdateCheckException("Update check failed with HTTP ${response.status.value}.")
-        }
-
-        val body = response.bodyAsText()
-        if (body.length > MAX_MANIFEST_LENGTH) {
-            throw UpdateCheckException("The update manifest is too large to be valid.")
-        }
-
-        val manifest = try {
-            parseBuildManifest(body)
+        val releaseBody = requestText(LATEST_RELEASE_API_URL, isLatestReleaseRequest = true)
+        val release = try {
+            parseRelease(releaseBody)
         } catch (exception: SerializationException) {
-            throw UpdateCheckException("The update manifest is not valid JSON.", exception)
+            throw UpdateCheckException("GitHub returned an invalid release response.", exception)
         } catch (exception: IllegalArgumentException) {
-            throw UpdateCheckException(exception.message ?: "The update manifest is invalid.", exception)
+            throw UpdateCheckException(exception.message ?: "The latest release is invalid.", exception)
         }
-        if (manifest.buildNumber <= currentBuildNumber) return null
 
-        val assets = manifest.assets
-        val asset = assets[platformAssetName]
-            ?: throw UpdateCheckException("No update package is available for this platform.")
+        val metadataBody = requestText(release.updateMetadataUrl)
+        val metadata = try {
+            parseUpdateMetadata(metadataBody, release)
+        } catch (exception: SerializationException) {
+            throw UpdateCheckException("The release update metadata is not valid JSON.", exception)
+        } catch (exception: IllegalArgumentException) {
+            throw UpdateCheckException(exception.message ?: "The release update metadata is invalid.", exception)
+        }
+        if (metadata.versionCode <= currentBuildNumber) return null
+
         return AppUpdate(
-            buildNumber = manifest.buildNumber,
-            commitSha = manifest.commitSha,
-            builtAt = manifest.builtAt,
-            summary = manifest.summary,
-            assetUrl = asset.url,
-            assetSha256 = asset.sha256,
-            buildPageUrl = manifest.buildPageUrl,
+            versionName = metadata.versionName,
+            buildNumber = metadata.versionCode,
+            commitSha = metadata.commitSha,
+            builtAt = metadata.builtAt,
+            summary = release.summary,
+            assetUrl = metadata.apkUrl,
+            assetSha256 = metadata.apkSha256,
+            releasePageUrl = release.pageUrl,
         )
     }
 
@@ -91,93 +82,168 @@ class BuildUpdateChecker(
         client.close()
     }
 
-    private fun parseBuildManifest(body: String): BuildManifest {
+    private suspend fun requestText(
+        url: String,
+        isLatestReleaseRequest: Boolean = false,
+    ): String {
+        val response = client.get(url) {
+            timeout { requestTimeoutMillis = REQUEST_TIMEOUT_MILLIS }
+            headers.append(HttpHeaders.CacheControl, "no-cache")
+            headers.append(HttpHeaders.UserAgent, "RSSReader-Updater")
+            if (isLatestReleaseRequest) {
+                headers.append(HttpHeaders.Accept, "application/vnd.github+json")
+            }
+        }
+        if (response.status.value != 200) {
+            throw UpdateCheckException("GitHub release check failed with HTTP ${response.status.value}.")
+        }
+        val body = response.bodyAsText()
+        if (body.length > MAX_RESPONSE_LENGTH) {
+            throw UpdateCheckException("GitHub returned an unexpectedly large update response.")
+        }
+        return body
+    }
+
+    private fun parseRelease(body: String): ReleaseInfo {
         val root = Json.parseToJsonElement(body) as? JsonObject
-            ?: throw IllegalArgumentException("The update manifest must be a JSON object.")
-        val schemaVersion = root["schemaVersion"]?.jsonPrimitive?.intOrNull
-        require(schemaVersion == 1) { "This update manifest version is not supported." }
-
-        val buildNumber = root["buildNumber"]?.jsonPrimitive?.longOrNull
-        require(buildNumber != null && buildNumber > 0) { "The update manifest has an invalid build number." }
-        val commitSha = root.string("commitSha")
-        require(commitSha != null && SHA_PATTERN.matches(commitSha)) {
-            "The update manifest has an invalid commit SHA."
+            ?: throw IllegalArgumentException("The GitHub release response must be a JSON object.")
+        require(root["draft"]?.jsonPrimitive?.booleanOrNull == false) {
+            "The latest GitHub release is a draft."
         }
-        val builtAt = root.string("builtAt")
-        require(!builtAt.isNullOrBlank()) { "The update manifest has no build timestamp." }
-        val summary = root.string("summary").orEmpty().ifBlank { "A newer build is available." }
-        val runId = root["runId"]?.jsonPrimitive?.longOrNull
-        require(runId != null && runId > 0) { "The update manifest has an invalid workflow run ID." }
-        val assets = root["assets"]?.jsonObject
-            ?: throw IllegalArgumentException("The update manifest has no platform assets.")
-
-        val parsedAssets = assets.mapValues { (platform, value) ->
-            val asset = value.jsonObject
-            val fileName = when (platform) {
-                "android" -> "RSSReader-android.apk"
-                else -> throw IllegalArgumentException("The update manifest lists an unsupported platform.")
-            }
-            val url = asset.string("url")
-            require(url != null && isAllowedAssetUrl(url, fileName, buildNumber, commitSha)) {
-                "The update manifest contains an invalid package URL."
-            }
-            val sha256 = asset.string("sha256")
-            require(sha256 != null && SHA256_PATTERN.matches(sha256)) {
-                "The update manifest contains an invalid package checksum."
-            }
-            PlatformAsset(url, sha256.lowercase())
+        require(root["prerelease"]?.jsonPrimitive?.booleanOrNull == false) {
+            "The latest GitHub release is a prerelease."
         }
 
-        val buildPageUrl = "$BUILD_RUN_PAGE_BASE_URL$runId"
-        return BuildManifest(
-            buildNumber = buildNumber,
-            commitSha = commitSha,
-            builtAt = builtAt,
+        val tagName = root.string("tag_name")
+            ?: throw IllegalArgumentException("The latest GitHub release has no version tag.")
+        require(RELEASE_TAG_PATTERN.matches(tagName)) {
+            "The latest GitHub release has an invalid version tag."
+        }
+        val pageUrl = root.string("html_url")
+            ?: throw IllegalArgumentException("The latest GitHub release has no details URL.")
+        require(pageUrl == "$RELEASE_PAGE_BASE_URL$tagName") {
+            "The latest GitHub release has an invalid details URL."
+        }
+        val assets = root["assets"] as? JsonArray
+            ?: throw IllegalArgumentException("The latest GitHub release has no assets.")
+        val apkUrl = releaseAssetUrl(assets, ANDROID_APK_NAME, tagName)
+        val updateMetadataUrl = releaseAssetUrl(assets, ANDROID_UPDATE_METADATA_NAME, tagName)
+        val summary = root.string("body")
+            .orEmpty()
+            .replace(WHITESPACE_PATTERN, " ")
+            .trim()
+            .ifBlank { "A newer Android version is available." }
+
+        return ReleaseInfo(
+            tagName = tagName,
+            versionName = tagName.drop(1),
+            apkUrl = apkUrl,
+            updateMetadataUrl = updateMetadataUrl,
+            pageUrl = pageUrl,
             summary = summary.take(MAX_SUMMARY_LENGTH),
-            buildPageUrl = buildPageUrl,
-            assets = parsedAssets,
         )
     }
 
-    private fun isAllowedAssetUrl(
-        url: String,
-        fileName: String,
-        buildNumber: Long,
-        commitSha: String,
-    ): Boolean {
-        if (!url.startsWith(BUILD_ASSET_BASE_URL) || '\\' in url || '?' in url || '#' in url) {
-            return false
+    private fun releaseAssetUrl(
+        assets: JsonArray,
+        assetName: String,
+        tagName: String,
+    ): String {
+        val asset = assets.firstNotNullOfOrNull { element ->
+            val candidate = element as? JsonObject ?: return@firstNotNullOfOrNull null
+            if (candidate.string("name") == assetName) candidate else null
+        } ?: throw IllegalArgumentException("The latest release is missing $assetName.")
+        val url = asset.string("browser_download_url")
+        val expectedUrl = "$RELEASE_DOWNLOAD_BASE_URL$tagName/$assetName"
+        require(url == expectedUrl) {
+            "The latest release contains an unexpected $assetName URL."
         }
-        val path = url.removePrefix(BUILD_ASSET_BASE_URL)
-        val segments = path.split('/')
-        val expectedBuildDirectory = "${buildNumber.toString().padStart(12, '0')}-${commitSha.take(12)}"
-        return segments.size == 2 &&
-            segments[0] == expectedBuildDirectory &&
-            segments[1] == fileName
+        return expectedUrl
+    }
+
+    private fun parseUpdateMetadata(
+        body: String,
+        release: ReleaseInfo,
+    ): ReleaseUpdateMetadata {
+        val root = Json.parseToJsonElement(body) as? JsonObject
+            ?: throw IllegalArgumentException("Release update metadata must be a JSON object.")
+        val schemaVersion = root["schemaVersion"]?.jsonPrimitive?.intOrNull
+        require(schemaVersion == 1) { "This release update metadata version is not supported." }
+        require(root.string("tagName") == release.tagName) {
+            "Release update metadata does not match the latest release tag."
+        }
+
+        val versionName = root.string("versionName")
+            ?: throw IllegalArgumentException("Release update metadata has no version name.")
+        require(versionName == release.versionName) {
+            "Release update metadata has an invalid version name."
+        }
+        val versionCode = root["versionCode"]?.jsonPrimitive?.longOrNull
+            ?: throw IllegalArgumentException("Release update metadata has an invalid Android version code.")
+        require(versionCode in 1L..MAX_SUPPORTED_VERSION_CODE) {
+            "Release update metadata has an invalid Android version code."
+        }
+        val commitSha = root.string("commitSha")
+            ?: throw IllegalArgumentException("Release update metadata has an invalid commit SHA.")
+        require(COMMIT_SHA_PATTERN.matches(commitSha)) {
+            "Release update metadata has an invalid commit SHA."
+        }
+        val builtAt = root.string("builtAt")
+            ?: throw IllegalArgumentException("Release update metadata has no build timestamp.")
+        require(builtAt.isNotBlank()) {
+            "Release update metadata has no build timestamp."
+        }
+        val apkUrl = root.string("apkUrl")
+            ?: throw IllegalArgumentException("Release update metadata has no APK URL.")
+        require(apkUrl == release.apkUrl) {
+            "Release update metadata contains an unexpected APK URL."
+        }
+        val apkSha256 = root.string("apkSha256")
+            ?: throw IllegalArgumentException("Release update metadata contains an invalid APK checksum.")
+        require(SHA256_PATTERN.matches(apkSha256)) {
+            "Release update metadata contains an invalid APK checksum."
+        }
+
+        return ReleaseUpdateMetadata(
+            versionName = versionName,
+            versionCode = versionCode,
+            commitSha = commitSha,
+            builtAt = builtAt,
+            apkUrl = apkUrl,
+            apkSha256 = apkSha256.lowercase(),
+        )
     }
 
     private fun JsonObject.string(key: String): String? =
         this[key]?.jsonPrimitive?.contentOrNull
 
-    private data class PlatformAsset(
-        val url: String,
-        val sha256: String,
+    private data class ReleaseInfo(
+        val tagName: String,
+        val versionName: String,
+        val apkUrl: String,
+        val updateMetadataUrl: String,
+        val pageUrl: String,
+        val summary: String,
     )
 
-    private data class BuildManifest(
-        val buildNumber: Long,
+    private data class ReleaseUpdateMetadata(
+        val versionName: String,
+        val versionCode: Long,
         val commitSha: String,
         val builtAt: String,
-        val summary: String,
-        val buildPageUrl: String,
-        val assets: Map<String, PlatformAsset>,
+        val apkUrl: String,
+        val apkSha256: String,
     )
 
     private companion object {
-        const val MAX_MANIFEST_LENGTH = 64 * 1024
-        const val MAX_SUMMARY_LENGTH = 240
-        val SHA_PATTERN = Regex("^[0-9a-fA-F]{40}$")
+        const val REQUEST_TIMEOUT_MILLIS = 12_000
+        const val MAX_RESPONSE_LENGTH = 256 * 1024
+        const val MAX_SUMMARY_LENGTH = 320
+        const val MAX_SUPPORTED_VERSION_CODE = 2_100_000_000L
+        val RELEASE_TAG_PATTERN = Regex("^[vV]\\d+\\.\\d+\\.\\d+$")
+        val COMMIT_SHA_PATTERN = Regex("^[0-9a-fA-F]{40}$")
         val SHA256_PATTERN = Regex("^[0-9a-fA-F]{64}$")
+        val WHITESPACE_PATTERN = Regex("\\s+")
     }
 }
 

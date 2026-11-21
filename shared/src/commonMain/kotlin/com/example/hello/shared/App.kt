@@ -493,7 +493,7 @@ fun App(configurationStore: ConfigurationStore) {
                 title = { Text("Update available") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Build ${update.buildNumber} is ready to install.")
+                        Text("Version ${update.versionName} (build ${update.buildNumber}) is ready to install.")
                         Text(update.summary)
                         Text(
                             "Commit ${update.commitSha.take(7)} · ${update.builtAt}",
@@ -534,7 +534,7 @@ fun App(configurationStore: ConfigurationStore) {
                     Row {
                         TextButton(
                             enabled = !isInstallingUpdate,
-                            onClick = { openArticle(update.buildPageUrl) },
+                            onClick = { openArticle(update.releasePageUrl) },
                         ) {
                             Text("Build details")
                         }

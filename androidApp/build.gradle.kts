@@ -20,6 +20,10 @@ android {
     val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toLongOrNull()
     val ciRunAttempt = System.getenv("GITHUB_RUN_ATTEMPT")?.toLongOrNull() ?: 1L
     val buildNumber = ciRunNumber?.let { it * 1_000L + ciRunAttempt } ?: 6L
+    val releaseVersionName = System.getenv("GITHUB_REF_NAME")
+        ?.takeIf { it.matches(Regex("""^[vV]\d+\.\d+\.\d+$""")) }
+        ?.drop(1)
+        ?: "0.1.4"
     check(buildNumber in 1..2_100_000_000L) {
         "The generated Android build number is outside the supported versionCode range."
     }
@@ -58,7 +62,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = buildNumber.toInt()
-        versionName = "0.1.4"
+        versionName = releaseVersionName
     }
 
     buildTypes {

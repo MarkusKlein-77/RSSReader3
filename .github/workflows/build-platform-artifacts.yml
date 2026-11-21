@@ -50,7 +50,7 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Configure Android release signing
-        if: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -72,20 +72,20 @@ jobs:
               echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
             } >> "$GITHUB_ENV"
           else
-            echo "::error::Android signing secrets are required for update-capable builds."
+            echo "::error::Android signing secrets are required for release builds."
             exit 1
           fi
 
       - name: Build Android debug APK
-        if: ${{ github.event_name == 'pull_request' || (!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: ./gradlew --no-daemon --console=plain :androidApp:assembleDebug
 
       - name: Build signed Android APK
-        if: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+        if: startsWith(github.ref, 'refs/tags/')
         run: ./gradlew --no-daemon --console=plain :androidApp:assembleRelease
 
-      - name: Prepare and verify update APK
-        if: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+      - name: Prepare and verify release APK
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
@@ -116,7 +116,7 @@ jobs:
           cp "$APK_PATH" RSSReader-android.apk
 
       - name: Upload signed Android APK
-        if: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7
         with:
           name: android-app
@@ -124,7 +124,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Android debug APK
-        if: ${{ github.event_name == 'pull_request' || (!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           name: android-app
@@ -182,12 +182,48 @@ jobs:
           name: windows-desktop-app
           path: release-assets/windows
 
+      - name: Create Android release metadata
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^[vV][0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The release tag must contain a supported version."
+            exit 1
+          fi
+          APK_PATH="release-assets/android/RSSReader-android.apk"
+          if [ ! -s "$APK_PATH" ]; then
+            echo "::error::The signed Android release APK is missing."
+            exit 1
+          fi
+          VERSION_NAME="${GITHUB_REF_NAME:1}"
+          BUILD_NUMBER=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))
+          APK_SHA256="$(sha256sum "$APK_PATH" | cut -d ' ' -f 1)"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/RSSReader-android.apk"
+          jq -n \
+            --arg tagName "$GITHUB_REF_NAME" \
+            --arg versionName "$VERSION_NAME" \
+            --argjson versionCode "$BUILD_NUMBER" \
+            --arg commitSha "$GITHUB_SHA" \
+            --arg builtAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --arg apkUrl "$APK_URL" \
+            --arg apkSha256 "$APK_SHA256" \
+            '{
+              schemaVersion: 1,
+              tagName: $tagName,
+              versionName: $versionName,
+              versionCode: $versionCode,
+              commitSha: $commitSha,
+              builtAt: $builtAt,
+              apkUrl: $apkUrl,
+              apkSha256: $apkSha256
+            }' > release-assets/android/RSSReader-android-update.json
+
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME"
           release-assets/android/RSSReader-android.apk
+          release-assets/android/RSSReader-android-update.json
           release-assets/windows/RSSReader-windows-x64.zip
           --repo "$GITHUB_REPOSITORY"
           --title "$GITHUB_REF_NAME"
@@ -220,8 +256,8 @@ jobs:
           if-no-files-found: error
 
   deploy-pages:
-    name: Publish Android build and deploy Wasm to GitHub Pages
-    needs: [build-android, build-wasm, test-shared]
+    name: Deploy Wasm to GitHub Pages
+    needs: [build-wasm, test-shared]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     concurrency:
@@ -229,17 +265,6 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout RSS Reader source
-        uses: actions/checkout@v7
-        with:
-          path: rss-reader-source
-
-      - name: Download Android APK
-        uses: actions/download-artifact@v8
-        with:
-          name: android-app
-          path: android-artifact
-
       - name: Download Wasm browser distribution
         uses: actions/download-artifact@v8
         with:
@@ -253,80 +278,15 @@ jobs:
           token: ${{ secrets.PAGES_REPO_TOKEN }}
           path: pages-site
 
-      - name: Publish normal Android build and deploy Wasm
+      - name: Deploy Wasm and remove legacy build updates
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" == "refs/heads/main" || "$GITHUB_REF" == "refs/heads/master" ]]; then
-            BUILD_NUMBER=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))
-            MANIFEST="pages-site/RSSReader/updates/latest-build.json"
-            if [ -f "$MANIFEST" ]; then
-              PUBLISHED_BUILD=$(jq -r '.buildNumber // 0' "$MANIFEST")
-              if [ "$PUBLISHED_BUILD" -ge "$BUILD_NUMBER" ]; then
-                echo "A newer Android build is already published; skipping this stale Pages deployment."
-                exit 0
-              fi
-            fi
-
-            APK_PATH="android-artifact/RSSReader-android.apk"
-            if [ ! -s "$APK_PATH" ]; then
-              echo "::error::The signed Android APK is missing."
-              exit 1
-            fi
-            APK_SIZE=$(stat -c '%s' "$APK_PATH")
-            if [ "$APK_SIZE" -ge 104857600 ]; then
-              echo "::error::The Android APK exceeds GitHub Pages' 100 MiB per-file limit."
-              exit 1
-            fi
-
-            printf -v PADDED_BUILD_NUMBER '%012d' "$BUILD_NUMBER"
-            SHORT_SHA="${GITHUB_SHA:0:12}"
-            BUILD_DIRECTORY="pages-site/RSSReader/updates/builds/${PADDED_BUILD_NUMBER}-${SHORT_SHA}"
-            mkdir -p "$BUILD_DIRECTORY"
-            cp "$APK_PATH" "$BUILD_DIRECTORY/RSSReader-android.apk"
-            mkdir -p pages-site/RSSReader/updates/latest
-            cp "$APK_PATH" pages-site/RSSReader/updates/latest/RSSReader-android.apk
-            APK_SHA256=$(sha256sum "$BUILD_DIRECTORY/RSSReader-android.apk" | cut -d ' ' -f 1)
-            SUMMARY=$(git -C rss-reader-source log -1 --format=%s "$GITHUB_SHA" | cut -c1-240)
-            APK_URL="https://onkelholle.de/RSSReader/updates/builds/${PADDED_BUILD_NUMBER}-${SHORT_SHA}/RSSReader-android.apk"
-
-            mkdir -p "$(dirname "$MANIFEST")"
-            jq -n \
-              --argjson buildNumber "$BUILD_NUMBER" \
-              --argjson runId "$GITHUB_RUN_ID" \
-              --arg commitSha "$GITHUB_SHA" \
-              --arg builtAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-              --arg summary "$SUMMARY" \
-              --arg apkUrl "$APK_URL" \
-              --arg apkSha256 "$APK_SHA256" \
-              '{
-                schemaVersion: 1,
-                buildNumber: $buildNumber,
-                runId: $runId,
-                commitSha: $commitSha,
-                builtAt: $builtAt,
-                summary: $summary,
-                assets: {
-                  android: {
-                    url: $apkUrl,
-                    sha256: $apkSha256
-                  }
-                }
-              }' > "$MANIFEST"
-
-            find pages-site/RSSReader/updates/builds -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
-              sort -r |
-              tail -n +11 |
-              while IFS= read -r OLD_BUILD; do
-                rm -rf -- "pages-site/RSSReader/updates/builds/$OLD_BUILD"
-              done
-          fi
-
+          rm -rf -- pages-site/RSSReader/updates
           mkdir -p pages-site/RSSReader
-          find pages-site/RSSReader -mindepth 1 -maxdepth 1 ! -name updates -exec rm -rf -- {} +
-          mkdir -p pages-site/RSSReader
+          find pages-site/RSSReader -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           cp -R wasm-dist/. pages-site/RSSReader/
 
-      - name: Commit and push build publication
+      - name: Commit and push web deployment
         working-directory: pages-site
         run: |
           git config user.name "github-actions[bot]"
@@ -335,6 +295,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "RSSReader is already up to date."
           else
-            git commit -m "Deploy RSSReader and publish Android build"
+            git commit -m "Deploy RSSReader web app"
             git push
           fi
