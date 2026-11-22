@@ -37,6 +37,7 @@ data class AppUpdate(
 )
 
 interface AppUpdater {
+    val currentVersionName: String
     suspend fun checkForUpdate(): AppUpdate?
     suspend fun install(update: AppUpdate)
     fun close()

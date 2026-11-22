@@ -166,7 +166,7 @@ fun App(configurationStore: ConfigurationStore) {
 
     suspend fun markArticleAsRead(articleId: Long) {
         val selectedConfiguration = configuration ?: return
-        if (articleId in pendingReadIds || showAllArticles) return
+        if (articleId in pendingReadIds || showAllArticles || isRefreshing) return
 
         pendingReadIds = pendingReadIds + articleId
         readError = null
@@ -175,6 +175,9 @@ fun App(configurationStore: ConfigurationStore) {
             articleEntries = articleEntries.map { entry ->
                 if (entry.article.id == articleId) entry.copy(markedForDeletion = true) else entry
             }
+        } catch (exception: CancellationException) {
+            pendingReadIds = pendingReadIds - articleId
+            throw exception
         } catch (exception: Exception) {
             pendingReadIds = pendingReadIds - articleId
             readError = exception.message ?: "Could not mark article as read."
@@ -183,7 +186,7 @@ fun App(configurationStore: ConfigurationStore) {
 
     suspend fun markAllArticlesAsRead() {
         val selectedConfiguration = configuration ?: return
-        if (markAllReadInProgress || showAllArticles || unreadArticles.isEmpty()) return
+        if (markAllReadInProgress || isRefreshing || showAllArticles || unreadArticles.isEmpty()) return
 
         val idsToMark = unreadArticles.map { it.id }
         markAllReadInProgress = true
@@ -208,10 +211,18 @@ fun App(configurationStore: ConfigurationStore) {
         articleEntries,
         showAllArticles,
         configuration,
+        isRefreshing,
         lazyGridState.firstVisibleItemIndex,
         lazyGridState.firstVisibleItemScrollOffset,
     ) {
-        if (showAllArticles || configuration == null || unreadArticles.isEmpty()) return@LaunchedEffect
+        if (
+            isRefreshing ||
+            showAllArticles ||
+            configuration == null ||
+            unreadArticles.isEmpty()
+        ) {
+            return@LaunchedEffect
+        }
 
         val currentVisibleIndex = lazyGridState.firstVisibleItemIndex
         val previousIndex = previousVisibleIndex.value
@@ -271,7 +282,7 @@ fun App(configurationStore: ConfigurationStore) {
                                 }
                             }
                         },
-                        enabled = configuration != null && !isRefreshing,
+                        enabled = configuration != null && !isRefreshing && !markAllReadInProgress,
                         contentPadding = PaddingValues(horizontal = 4.dp),
                     ) {
                         Text(if (showAllArticles) "Unread articles" else "All articles")
@@ -294,7 +305,7 @@ fun App(configurationStore: ConfigurationStore) {
                                 }
                             }
                         },
-                        enabled = configuration != null && !isRefreshing,
+                        enabled = configuration != null && !isRefreshing && !markAllReadInProgress,
                     ) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Refresh articles")
                     }
@@ -396,15 +407,21 @@ fun App(configurationStore: ConfigurationStore) {
                             Text(it, style = MaterialTheme.typography.bodySmall)
                         }
                         if (appUpdater != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(
-                                    enabled = !isCheckingForUpdate && !isInstallingUpdate,
-                                    onClick = { checkForUpdates(showCurrentBuild = true) },
-                                ) {
-                                    Text(if (isCheckingForUpdate) "Checking..." else "Check for updates")
-                                }
-                                updateStatus?.let {
-                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    "Release version: ${appUpdater.currentVersionName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(
+                                        enabled = !isCheckingForUpdate && !isInstallingUpdate,
+                                        onClick = { checkForUpdates(showCurrentBuild = true) },
+                                    ) {
+                                        Text(if (isCheckingForUpdate) "Checking..." else "Check for updates")
+                                    }
+                                    updateStatus?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
                         }

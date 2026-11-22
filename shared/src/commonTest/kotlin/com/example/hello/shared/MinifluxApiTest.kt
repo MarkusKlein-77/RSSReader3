@@ -79,6 +79,41 @@ class MinifluxApiTest {
     }
 
     @Test
+    fun loadsArticlesAcrossAllApiPages() = runBlocking {
+        val requestedOffsets = mutableListOf<String?>()
+        val engine = MockEngine { request ->
+            assertEquals("100", request.url.parameters["limit"])
+            assertEquals("unread", request.url.parameters["status"])
+            val offset = request.url.parameters["offset"]
+            requestedOffsets += offset
+            when (offset) {
+                "0" -> respond(
+                    """{"total":3,"entries":[{"id":11,"title":"First"},{"id":22,"title":"Second"}]}""",
+                    status = HttpStatusCode.OK,
+                )
+                "2" -> respond(
+                    """{"total":3,"entries":[{"id":33,"title":"Third"}]}""",
+                    status = HttpStatusCode.OK,
+                )
+                else -> error("Unexpected article offset: $offset")
+            }
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        val articles = api.loadArticles(
+            configuration = MinifluxConfiguration(
+                serverUrl = "https://miniflux.example.com",
+                accessToken = "token-123",
+            ),
+            includeRead = false,
+        )
+
+        assertEquals(listOf(11L, 22L, 33L), articles.map { it.id })
+        assertEquals(listOf("0", "2"), requestedOffsets)
+        api.close()
+    }
+
+    @Test
     fun marksSingleEntryAsRead() = runBlocking {
         val engine = MockEngine { request ->
             assertEquals("https://miniflux.example.com/v1/entries", request.url.toString())

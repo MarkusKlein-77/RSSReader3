@@ -147,6 +147,7 @@ Normal branch builds do not publish Android update packages; they can still prod
 - Compare the metadata's Android `versionCode` with the installed `versionCode`, not the tag's semantic version: normal CI builds may have higher version codes than the currently published release, and must never be downgraded to. Offer only a release whose code is greater than the installed app's.
 - Generate and attach complete update metadata only after the signed Android release APK has been built and verified. Keep the release's `versionName`, metadata, and APK version codes aligned.
 - Check once after startup without blocking the app, and provide a manual **Check for updates** action in settings. Avoid repeated checks in one session and use a modest timeout.
+- Display the installed Android release `versionName` immediately above the manual update-check button.
 - Show the available release version, build number, short commit SHA, build time, and release notes, with **Update**, **Later**, and a link to the release. Do not download until the user chooses **Update**. Remembering a dismissed release is optional; it must not suppress a manual check.
 
 ### Platform update flow
@@ -190,6 +191,7 @@ In practical terms:
 ### Intended UX behavior
 
 - Unread articles are displayed as the current list from `MinifluxApi.loadArticles(..., includeRead = false)`.
+- `loadArticles` follows Miniflux's paginated `offset`/`limit` results so older articles beyond the first API page are not omitted.
 - The app should maintain a local “pending read” tracker so an item is not re-sent repeatedly while the user keeps scrolling through the same area.
 - The article icon/button and list row should remain unchanged for this first implementation; the behavior is purely automatic and list-driven.
 - If the Miniflux request fails, the article should remain in the local unread list and be retried later, rather than silently disappearing.

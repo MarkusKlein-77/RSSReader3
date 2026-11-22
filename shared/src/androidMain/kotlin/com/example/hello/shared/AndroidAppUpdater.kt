@@ -25,6 +25,10 @@ actual fun rememberAppUpdater(): AppUpdater? {
 private class AndroidAppUpdater(
     private val context: Context,
 ) : AppUpdater {
+    override val currentVersionName: String =
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            ?: throw IllegalStateException("The installed app version is unavailable.")
+
     private val checker = ReleaseUpdateChecker(
         currentBuildNumber = installedBuildNumber(),
     )

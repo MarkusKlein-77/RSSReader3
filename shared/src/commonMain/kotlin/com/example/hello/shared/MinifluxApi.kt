@@ -76,30 +76,52 @@ class MinifluxApi(
         includeRead: Boolean,
     ): List<ArticleHeader> {
         val statusFilter = if (includeRead) "" else "status=unread&"
-        val response = request(
-            configuration,
-            "v1/entries?${statusFilter}order=published_at&direction=desc&limit=100",
-        )
-        val entries = Json.parseToJsonElement(response).jsonObject["entries"]?.jsonArray
-            ?: return emptyList()
-        return entries.mapNotNull { element ->
-            val entry = element.jsonObject
-            val id = entry["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
-            val title = entry["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
-            val feed = entry["feed"] as? JsonObject
-            val siteUrl = feed?.get("site_url")?.jsonPrimitive?.contentOrNull
-                ?: feed?.get("feed_url")?.jsonPrimitive?.contentOrNull
-            val content = entry["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            ArticleHeader(
-                id = id,
-                title = title,
-                publishedAt = entry["published_at"]?.jsonPrimitive?.content.orEmpty(),
-                url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                imageUrl = findImageUrl(entry, content),
-                sourceTitle = feed?.get("title")?.jsonPrimitive?.contentOrNull ?: "RSS",
-                sourceIconUrl = faviconUrl(siteUrl),
+        val articles = mutableListOf<ArticleHeader>()
+        val seenIds = mutableSetOf<Long>()
+        var offset = 0
+
+        while (true) {
+            val response = request(
+                configuration,
+                "v1/entries?${statusFilter}order=published_at&direction=desc&limit=$ARTICLE_PAGE_SIZE&offset=$offset",
             )
+            val root = Json.parseToJsonElement(response).jsonObject
+            val entries = root["entries"] as? JsonArray
+                ?: throw MinifluxRequestException("Miniflux returned an invalid article list.")
+            val total = root["total"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+            val previousCount = articles.size
+
+            entries.forEach { element ->
+                val entry = element.jsonObject
+                val id = entry["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@forEach
+                val title = entry["title"]?.jsonPrimitive?.content ?: return@forEach
+                val feed = entry["feed"] as? JsonObject
+                val siteUrl = feed?.get("site_url")?.jsonPrimitive?.contentOrNull
+                    ?: feed?.get("feed_url")?.jsonPrimitive?.contentOrNull
+                val content = entry["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                if (seenIds.add(id)) {
+                    articles += ArticleHeader(
+                        id = id,
+                        title = title,
+                        publishedAt = entry["published_at"]?.jsonPrimitive?.content.orEmpty(),
+                        url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        imageUrl = findImageUrl(entry, content),
+                        sourceTitle = feed?.get("title")?.jsonPrimitive?.contentOrNull ?: "RSS",
+                        sourceIconUrl = faviconUrl(siteUrl),
+                    )
+                }
+            }
+
+            if (entries.isEmpty() || articles.size == previousCount) break
+            offset += entries.size
+            if ((total != null && offset >= total) ||
+                (total == null && entries.size < ARTICLE_PAGE_SIZE)
+            ) {
+                break
+            }
         }
+
+        return articles
     }
 
     private fun findImageUrl(entry: JsonObject, content: String): String? {
@@ -132,6 +154,7 @@ class MinifluxApi(
     }
 
     private companion object {
+        const val ARTICLE_PAGE_SIZE = 100
         val imageSourcePattern = Regex(
             """<img\b[^>]*\bsrc\s*=\s*[\"']([^\"']+)[\"']""",
             RegexOption.IGNORE_CASE,
