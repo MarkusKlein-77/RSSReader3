@@ -109,7 +109,7 @@ class MinifluxApiTest {
         )
 
         assertEquals(listOf(11L, 22L, 33L), articles.map { it.id })
-        assertEquals(listOf("0", "2"), requestedOffsets)
+        assertEquals(listOf<String?>("0", "2"), requestedOffsets)
         api.close()
     }
 
