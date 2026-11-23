@@ -8,6 +8,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
@@ -18,6 +20,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration.Companion.minutes
+
+private const val HOSTNAME_CAUSE_CHAIN_LIMIT = 5
 
 data class ArticleHeader(
     val id: Long,
@@ -155,6 +159,7 @@ class MinifluxApi(
 
     private companion object {
         const val ARTICLE_PAGE_SIZE = 100
+        const val HOSTNAME_RETRY_DELAY_MILLIS = 1_000L
         val imageSourcePattern = Regex(
             """<img\b[^>]*\bsrc\s*=\s*[\"']([^\"']+)[\"']""",
             RegexOption.IGNORE_CASE,
@@ -171,20 +176,22 @@ class MinifluxApi(
         put: Boolean = false,
     ): String {
         val url = "${configuration.serverUrl.trimEnd('/')}/$path"
-        val response = if (put) {
-            client.put(url) { header("X-Auth-Token", configuration.accessToken) }
-        } else {
-            client.get(url) { header("X-Auth-Token", configuration.accessToken) }
+        return retryHostnameResolution {
+            val response = if (put) {
+                client.put(url) { header("X-Auth-Token", configuration.accessToken) }
+            } else {
+                client.get(url) { header("X-Auth-Token", configuration.accessToken) }
+            }
+            if (response.status.value !in 200..299) {
+                throw MinifluxRequestException(
+                    when (response.status.value) {
+                        401, 403 -> "Miniflux rejected the access token. Check your configuration."
+                        else -> "Miniflux returned HTTP ${response.status.value}. Try again later."
+                    },
+                )
+            }
+            response.bodyAsText()
         }
-        if (response.status.value !in 200..299) {
-            throw MinifluxRequestException(
-                when (response.status.value) {
-                    401, 403 -> "Miniflux rejected the access token. Check your configuration."
-                    else -> "Miniflux returned HTTP ${response.status.value}. Try again later."
-                },
-            )
-        }
-        return response.bodyAsText()
     }
 
     private suspend fun requestWithBody(
@@ -193,30 +200,63 @@ class MinifluxApi(
         payload: String,
     ): String {
         val url = "${configuration.serverUrl.trimEnd('/')}/$path"
-        val response = client.put(url) {
-            header("X-Auth-Token", configuration.accessToken)
-            contentType(ContentType.Application.Json)
-            setBody(payload)
+        return retryHostnameResolution {
+            val response = client.put(url) {
+                header("X-Auth-Token", configuration.accessToken)
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            }
+            if (response.status.value !in 200..299) {
+                throw MinifluxRequestException(
+                    when (response.status.value) {
+                        401, 403 -> "Miniflux rejected the access token. Check your configuration."
+                        else -> "Miniflux returned HTTP ${response.status.value}. Try again later."
+                    },
+                )
+            }
+            response.bodyAsText()
         }
-        if (response.status.value !in 200..299) {
-            throw MinifluxRequestException(
-                when (response.status.value) {
-                    401, 403 -> "Miniflux rejected the access token. Check your configuration."
-                    else -> "Miniflux returned HTTP ${response.status.value}. Try again later."
-                },
-            )
-        }
-        return response.bodyAsText()
     }
+
+    private suspend fun <T> retryHostnameResolution(operation: suspend () -> T): T {
+        var retried = false
+        while (true) {
+            try {
+                return operation()
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                if (retried || !isHostnameResolutionFailure(exception)) throw exception
+                retried = true
+                delay(HOSTNAME_RETRY_DELAY_MILLIS)
+            }
+        }
+    }
+
 }
 
 class MinifluxRequestException(message: String) : Exception(message)
 
+private fun isHostnameResolutionFailure(exception: Throwable): Boolean {
+    var current: Throwable? = exception
+    repeat(HOSTNAME_CAUSE_CHAIN_LIMIT) {
+        val message = current?.message.orEmpty()
+        if (
+            message.contains("Unable to resolve host", ignoreCase = true) ||
+            message.contains("No address associated with hostname", ignoreCase = true) ||
+            message.contains("UnknownHostException", ignoreCase = true)
+        ) {
+            return true
+        }
+        current = current?.cause
+    }
+    return false
+}
+
 fun formatMinifluxError(exception: Exception, fallback: String): String {
-    val message = exception.message.orEmpty()
-    return if (message.contains("Unable to resolve host", ignoreCase = true)) {
+    return if (isHostnameResolutionFailure(exception)) {
         "Could not resolve the Miniflux server hostname. Check the server URL and your DNS or network connection, then retry."
     } else {
-        message.ifBlank { fallback }
+        exception.message.orEmpty().ifBlank { fallback }
     }
 }

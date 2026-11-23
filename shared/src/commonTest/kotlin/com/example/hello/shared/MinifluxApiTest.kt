@@ -36,6 +36,58 @@ class MinifluxApiTest {
     }
 
     @Test
+    fun retriesTransientHostnameResolutionFailureOnce() = runBlocking {
+        var attempts = 0
+        val engine = MockEngine {
+            attempts += 1
+            if (attempts == 1) {
+                throw Exception("""Unable to resolve host "miniflux.example.com": No address associated with hostname""")
+            }
+            respond("{}", status = HttpStatusCode.OK)
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        api.validate(
+            MinifluxConfiguration(
+                serverUrl = "https://miniflux.example.com",
+                accessToken = "token-123",
+            ),
+        )
+
+        assertEquals(2, attempts)
+        api.close()
+    }
+
+    @Test
+    fun surfacesPersistentHostnameResolutionFailureAfterOneRetry() = runBlocking {
+        var attempts = 0
+        val engine = MockEngine {
+            attempts += 1
+            throw Exception("Connection failed", Exception("UnknownHostException: miniflux.example.com"))
+        }
+
+        val api = MinifluxApi(client = HttpClient(engine))
+        var error: Exception? = null
+        try {
+            api.validate(
+                MinifluxConfiguration(
+                    serverUrl = "https://miniflux.example.com",
+                    accessToken = "token-123",
+                ),
+            )
+        } catch (exception: Exception) {
+            error = exception
+        }
+
+        assertEquals(2, attempts)
+        assertEquals(
+            "Could not resolve the Miniflux server hostname. Check the server URL and your DNS or network connection, then retry.",
+            error?.let { formatMinifluxError(it, "Fallback message") },
+        )
+        api.close()
+    }
+
+    @Test
     fun detectsRecentFeedCheckFromLatestFeedTimestamp() = runBlocking {
         val engine = MockEngine { request ->
             assertEquals("https://miniflux.example.com/v1/feeds", request.url.toString())

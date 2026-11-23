@@ -150,8 +150,16 @@ fun App(configurationStore: ConfigurationStore) {
                     .map { ArticleListEntry(it) }
                 if (!hasRecentFeedCheck) {
                     delay(30_000)
-                    articleEntries = api.loadArticles(configurationToLoad, includeRead)
-                        .map { ArticleListEntry(it) }
+                    try {
+                        articleEntries = api.loadArticles(configurationToLoad, includeRead)
+                            .map { ArticleListEntry(it) }
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (exception: Exception) {
+                        refreshError = "The follow-up article refresh failed. " +
+                            "${formatMinifluxError(exception, "Could not refresh articles.")} " +
+                            "Previously loaded articles are still available."
+                    }
                 }
             } else {
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
@@ -182,7 +190,8 @@ fun App(configurationStore: ConfigurationStore) {
             throw exception
         } catch (exception: Exception) {
             pendingReadIds = pendingReadIds - articleId
-            readError = formatMinifluxError(exception, "Could not mark article as read.")
+            readError = "Could not mark the article as read. " +
+                formatMinifluxError(exception, "Check your connection and try again.")
         }
     }
 
@@ -200,7 +209,8 @@ fun App(configurationStore: ConfigurationStore) {
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
-            readError = formatMinifluxError(exception, "Could not mark all articles as read.")
+            readError = "Could not mark articles as read. " +
+                formatMinifluxError(exception, "Check your connection and try again.")
         } finally {
             pendingReadIds = pendingReadIds - idsToMark.toSet()
             markAllReadInProgress = false
