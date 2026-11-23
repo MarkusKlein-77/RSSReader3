@@ -157,8 +157,10 @@ fun App(configurationStore: ConfigurationStore) {
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
             }
+        } catch (exception: CancellationException) {
+            throw exception
         } catch (exception: Exception) {
-            refreshError = exception.message ?: "Could not refresh articles. Check your connection."
+            refreshError = formatMinifluxError(exception, "Could not refresh articles. Check your connection.")
         } finally {
             isRefreshing = false
         }
@@ -180,7 +182,7 @@ fun App(configurationStore: ConfigurationStore) {
             throw exception
         } catch (exception: Exception) {
             pendingReadIds = pendingReadIds - articleId
-            readError = exception.message ?: "Could not mark article as read."
+            readError = formatMinifluxError(exception, "Could not mark article as read.")
         }
     }
 
@@ -195,8 +197,10 @@ fun App(configurationStore: ConfigurationStore) {
         try {
             api.markAllArticlesRead(selectedConfiguration, idsToMark)
             articleEntries = emptyList()
+        } catch (exception: CancellationException) {
+            throw exception
         } catch (exception: Exception) {
-            readError = exception.message ?: "Could not mark all articles as read."
+            readError = formatMinifluxError(exception, "Could not mark all articles as read.")
         } finally {
             pendingReadIds = pendingReadIds - idsToMark.toSet()
             markAllReadInProgress = false
@@ -453,9 +457,13 @@ fun App(configurationStore: ConfigurationStore) {
                                             configurationStore.save(updatedConfiguration)
                                             configuration = updatedConfiguration
                                             showConfiguration = false
+                                        } catch (exception: CancellationException) {
+                                            throw exception
                                         } catch (exception: Exception) {
-                                            validationError = exception.message
-                                                ?: "Could not connect to Miniflux. Check the URL and access token."
+                                            validationError = formatMinifluxError(
+                                                exception,
+                                                "Could not connect to Miniflux. Check the URL and access token.",
+                                            )
                                         } finally {
                                             isConnecting = false
                                         }

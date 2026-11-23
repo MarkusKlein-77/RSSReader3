@@ -211,3 +211,12 @@ class MinifluxApi(
 }
 
 class MinifluxRequestException(message: String) : Exception(message)
+
+fun formatMinifluxError(exception: Exception, fallback: String): String {
+    val message = exception.message.orEmpty()
+    return if (message.contains("Unable to resolve host", ignoreCase = true)) {
+        "Could not resolve the Miniflux server hostname. Check the server URL and your DNS or network connection, then retry."
+    } else {
+        message.ifBlank { fallback }
+    }
+}

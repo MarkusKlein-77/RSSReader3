@@ -17,6 +17,25 @@ import kotlin.test.assertTrue
 
 class MinifluxApiTest {
     @Test
+    fun translatesDnsResolutionErrorsIntoActionableMessage() {
+        val message = formatMinifluxError(
+            Exception("""Unable to resolve host "miniflux.example.com": No address associated with hostname"""),
+            "Fallback message",
+        )
+
+        assertEquals(
+            "Could not resolve the Miniflux server hostname. Check the server URL and your DNS or network connection, then retry.",
+            message,
+        )
+    }
+
+    @Test
+    fun preservesOtherErrorsAndUsesFallbackWhenMessageIsEmpty() {
+        assertEquals("Unauthorized", formatMinifluxError(Exception("Unauthorized"), "Fallback message"))
+        assertEquals("Fallback message", formatMinifluxError(Exception(""), "Fallback message"))
+    }
+
+    @Test
     fun detectsRecentFeedCheckFromLatestFeedTimestamp() = runBlocking {
         val engine = MockEngine { request ->
             assertEquals("https://miniflux.example.com/v1/feeds", request.url.toString())
