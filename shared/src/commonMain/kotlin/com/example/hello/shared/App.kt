@@ -141,14 +141,14 @@ fun App(configurationStore: ConfigurationStore) {
         previousVisibleIndex.value = null
         try {
             if (refreshServer) {
-                val hasRecentFeedCheck = api.hasRecentFeedCheck(configurationToLoad)
-                if (!hasRecentFeedCheck) {
+                val hasFeedsDueForRefresh = api.hasFeedsDueForRefresh(configurationToLoad)
+                if (hasFeedsDueForRefresh) {
                     api.refreshFeeds(configurationToLoad)
                     delay(5_000)
                 }
                 articleEntries = api.loadArticles(configurationToLoad, includeRead)
                     .map { ArticleListEntry(it) }
-                if (!hasRecentFeedCheck) {
+                if (hasFeedsDueForRefresh) {
                     delay(30_000)
                     try {
                         articleEntries = api.loadArticles(configurationToLoad, includeRead)
@@ -156,7 +156,7 @@ fun App(configurationStore: ConfigurationStore) {
                     } catch (exception: CancellationException) {
                         throw exception
                     } catch (exception: Exception) {
-                        refreshError = "The follow-up article refresh failed. " +
+                        refreshError = "Miniflux accepted the background refresh, but the follow-up article-list request failed. " +
                             "${formatMinifluxError(exception, "Could not refresh articles.")} " +
                             "Previously loaded articles are still available."
                     }

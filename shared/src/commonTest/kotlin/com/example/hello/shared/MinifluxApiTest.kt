@@ -88,18 +88,21 @@ class MinifluxApiTest {
     }
 
     @Test
-    fun detectsRecentFeedCheckFromLatestFeedTimestamp() = runBlocking {
+    fun detectsDueFeedsFromNextCheckTime() = runBlocking {
         val engine = MockEngine { request ->
             assertEquals("https://miniflux.example.com/v1/feeds", request.url.toString())
             assertEquals("token-123", request.headers["X-Auth-Token"])
             respond(
-                """[{"checked_at":"2026-10-12T09:00:00Z"},{"checked_at":"2026-10-12T09:55:00Z"}]""",
+                """[
+                    {"checked_at":"2026-10-12T09:59:00Z","next_check_at":"2026-10-12T10:01:00Z"},
+                    {"checked_at":"2026-10-12T09:59:00Z","next_check_at":"2026-10-12T09:59:59Z"}
+                ]""",
                 status = HttpStatusCode.OK,
             )
         }
 
         val api = MinifluxApi(client = HttpClient(engine))
-        val hasRecentCheck = api.hasRecentFeedCheck(
+        val hasFeedsDue = api.hasFeedsDueForRefresh(
             configuration = MinifluxConfiguration(
                 serverUrl = "https://miniflux.example.com",
                 accessToken = "token-123",
@@ -107,20 +110,25 @@ class MinifluxApiTest {
             now = Instant.parse("2026-10-12T10:00:00Z"),
         )
 
-        assertTrue(hasRecentCheck)
+        assertTrue(hasFeedsDue)
+        api.close()
     }
 
     @Test
-    fun reportsNoRecentFeedCheckWhenLatestTimestampIsAtLeastTenMinutesOld() = runBlocking {
-        val engine = MockEngine {
+    fun doesNotRefreshFeedsWhoseNextCheckIsInTheFuture() = runBlocking {
+        val engine = MockEngine { request ->
+            assertEquals("https://miniflux.example.com/v1/feeds", request.url.toString())
             respond(
-                """[{"checked_at":"2026-10-12T09:49:59Z"},{"checked_at":"2026-10-12T09:50:00Z"}]""",
+                """[
+                    {"checked_at":"2026-10-12T09:00:00Z","next_check_at":"2026-10-12T10:01:00Z"},
+                    {"checked_at":"2026-10-12T09:59:00Z","next_check_at":"2026-10-12T10:05:00Z","disabled":true}
+                ]""",
                 status = HttpStatusCode.OK,
             )
         }
 
         val api = MinifluxApi(client = HttpClient(engine))
-        val hasRecentCheck = api.hasRecentFeedCheck(
+        val hasFeedsDue = api.hasFeedsDueForRefresh(
             configuration = MinifluxConfiguration(
                 serverUrl = "https://miniflux.example.com",
                 accessToken = "token-123",
@@ -128,7 +136,8 @@ class MinifluxApiTest {
             now = Instant.parse("2026-10-12T10:00:00Z"),
         )
 
-        assertFalse(hasRecentCheck)
+        assertFalse(hasFeedsDue)
+        api.close()
     }
 
     @Test

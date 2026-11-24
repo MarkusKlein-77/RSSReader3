@@ -15,6 +15,7 @@ import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -55,24 +56,29 @@ class MinifluxApi(
         request(configuration, "v1/feeds/refresh", put = true)
     }
 
-    suspend fun hasRecentFeedCheck(
+    suspend fun hasFeedsDueForRefresh(
         configuration: MinifluxConfiguration,
         now: Instant = Clock.System.now(),
     ): Boolean {
         val response = request(configuration, "v1/feeds")
-        val latestCheckedAt = Json.parseToJsonElement(response).jsonArray.mapNotNull { element ->
-            val checkedAt = (element as? JsonObject)
-                ?.get("checked_at")
-                ?.jsonPrimitive
+        val feeds = Json.parseToJsonElement(response).jsonArray
+        return feeds.any { element ->
+            val feed = element as? JsonObject ?: return@any false
+            val disabled = (feed["disabled"] as? JsonPrimitive)?.contentOrNull == "true"
+            if (disabled) return@any false
+
+            val nextCheckAt = (feed["next_check_at"] as? JsonPrimitive)
                 ?.contentOrNull
-                ?: return@mapNotNull null
-            try {
-                Instant.parse(checkedAt)
-            } catch (_: IllegalArgumentException) {
-                null
+                ?.let(::parseInstantOrNull)
+            if (nextCheckAt != null) {
+                nextCheckAt < now
+            } else {
+                val checkedAt = (feed["checked_at"] as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.let(::parseInstantOrNull)
+                checkedAt == null || checkedAt <= now - 10.minutes
             }
-        }.maxOrNull()
-        return latestCheckedAt != null && latestCheckedAt > now - 10.minutes
+        }
     }
 
     suspend fun loadArticles(
@@ -231,6 +237,12 @@ class MinifluxApi(
                 delay(HOSTNAME_RETRY_DELAY_MILLIS)
             }
         }
+    }
+
+    private fun parseInstantOrNull(value: String): Instant? = try {
+        Instant.parse(value)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
 }
